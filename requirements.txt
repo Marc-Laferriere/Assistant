@@ -1,0 +1,8 @@
+# Work Automation Assistant — runtime dependencies
+#   keyring     - secrets in Windows Credential Manager (Phase 1)
+#   IMAPClient  - read-only IMAP ingestion (Phase 3)
+#   jinja2      - morning-brief HTML rendering (Phase 4)
+# The Gemini call is a thin urllib REST client (assistant/llm.py) - no SDK.
+keyring>=25
+IMAPClient>=3.0
+jinja2>=3.1

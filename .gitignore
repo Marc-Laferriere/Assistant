@@ -1,0 +1,24 @@
+# Python / environment
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets - these live in the OS credential store, never in files (belt and braces)
+.notion_token
+*.env
+
+# Personal / identifying configuration - start from the *.example.* templates
+config.toml
+profile.md
+
+# Runtime state, mail content, and generated output
+/data/
+/logs/
+/briefs/
+capture.txt
+capture.archive.txt
+
+# Private working notes and local tooling config
+PROPOSAL.md
+addtional_corrections.md
+.mcp.json

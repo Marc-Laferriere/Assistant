@@ -1,0 +1,120 @@
+# Copy this file to config.toml and fill in your own values.
+# config.toml is git-ignored - it holds identifying details and must never be
+# committed. Secrets (API keys, passwords, tokens) do NOT go here at all: they
+# live in the OS credential store (see README: `python -m assistant set-secret`).
+
+[notion]
+# Your main task database (required).
+tasks_db_id = "00000000-0000-0000-0000-000000000000"
+# Projects database - target of the Tasks "Project" relation (required).
+projects_db_id = "00000000-0000-0000-0000-000000000000"
+# OPTIONAL: a machine-maintained queue to mirror into Tasks (see [submittal_mirror]).
+# Delete this line and the [submittal_mirror] sections if you don't use one.
+submittal_db_id = "00000000-0000-0000-0000-000000000000"
+
+[user]
+name = "Your Name"            # used in AI prompts; "the user" if omitted
+
+[secrets]
+service_name = "work-assistant"   # namespace in the OS credential store
+
+# OPTIONAL. A project your Projects DB splits into parts that source text doesn't
+# distinguish (e.g. "Tower North" / "Tower South"). If the trigger appears, the
+# part whose keyword is also present wins; otherwise the default is used.
+# [[projects.split]]
+# trigger = "tower"
+# default = "Tower South"
+# parts = { north = "Tower North", south = "Tower South" }
+
+[imap]
+host = "mail.example.com"
+port = 993
+username = "you@example.com"
+# Folders to ingest (read-only). "Sent" is read only to detect "already replied
+# to this thread" - its contents are never classified or shown in the brief.
+# A trailing "/*" means "that folder and all descendants".
+folders = ["INBOX", "Sent"]
+# Safety cap on the first sync of any one folder (newest N kept).
+max_backfill_per_folder = 2000
+# Stored body text is truncated to this many characters.
+body_max_chars = 20000
+
+[ai]
+# Model ids for the thin Gemini REST client (assistant/llm.py).
+# "*-latest" aliases track Google's current recommended model, which avoids
+# breakage when a pinned older id is retired. Use a "-lite" alias for cheaper triage.
+triage_model = "gemini-flash-latest"
+reasoning_model = "gemini-flash-latest"
+max_body_chars = 4000         # email body sent to the model per message
+max_workers = 4               # parallel classification calls
+prompt_version = "v1"         # bump when you change the classifier prompt
+
+[brief]
+window_hours = 30             # messages first seen within this window go in the brief
+open_after_build = false      # open the HTML in the browser when built
+low_list_limit = 40           # cap the collapsed "buried" list
+
+[plan]
+max_items = 8                 # how many Active tasks make it into today's plan
+someday_sample = 3            # Someday items resurfaced per day (rotates daily)
+
+[notes]
+# Set on a task's Notes property once it has call notes in its page body -
+# a flag, not the content, so Notes stays scannable in table view.
+flag_text = "📝 see notes in body"
+
+[rules]
+# Deterministic pre-filter (no AI cost). Matched on the From address: exact
+# address, exact domain, or a parent domain (foo.example.com matches example.com).
+#
+# Always low priority (newsletters, marketing, vendor blasts):
+low_domains = ["newsletters.example.com", "promo.example.net"]
+low_senders = ["marketing@vendor.example.com", "scanner@yourcompany.example.com"]
+
+# Never surface at all (transient / automated account noise):
+skip_domains = ["accounts.example.com"]
+skip_senders = ["no-reply@notifications.example.com"]
+skip_subject_contains = ["one-time passcode", "security alert"]
+
+# Always real work - AI still classifies, but the result can't fall below
+# "normal" (newsletter rules above run first, so a blast from these is still low):
+important_domains = ["yourcompany.example.com", "client.example.org"]
+important_senders = []
+
+# ---------------------------------------------------------------------------
+# OPTIONAL: one-way mirror of a secondary database into Tasks. Remove this whole
+# section (and submittal_db_id above) if you don't need it.
+# ---------------------------------------------------------------------------
+[submittal_mirror]
+title_template = "List/ship: {project} PG {pages}"
+desc_title_template = "List/ship: {description}"
+# Received = your part of the work -> stays Active (shows in Today's Plan).
+# Listed = handed to the next stage -> Parked: tracked, but hidden from Today's
+# Plan and the Someday rotation, since there is nothing for you to do.
+horizon_for_received = "Active"
+horizon_for_listed = "Parked"
+
+# Known project names, for detecting the project inside a non-standard row name.
+known_projects = ["Example Tower", "Example Annex"]
+
+open_source_statuses = ["Received", "Listed"]
+closed_source_statuses = ["Ready To Ship"]
+
+# Source status -> Tasks "Status" value (must already exist in the Status property).
+task_status_for_received = "Not started"
+task_status_for_listed = "In progress"
+task_status_on_close = "Done"
+
+# Rows to ignore entirely (test data).
+skip_project_numbers = [1234]
+skip_name_contains = ["Unknown Project"]
+skip_notes_equals = ["test"]
+
+backfill_closed = false
+
+# Parsed project name -> Projects database page id, for the "Project" relation on
+# mirrored tasks. A project with no entry here is left unlinked (logged).
+# NOTE: keep this sub-table last - TOML assigns following bare keys to it.
+[submittal_mirror.project_page_ids]
+"Example Tower" = "00000000-0000-0000-0000-000000000000"
+"Example Annex" = "00000000-0000-0000-0000-000000000000"
