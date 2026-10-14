@@ -117,12 +117,42 @@ def _save(conn, message_id: str, c: Classification, prompt_version: str, hidden:
     )
 
 
-def _classify_one(row, profile: str, owner: str, model: str, important: bool) -> Classification:
+def _folder_rule(folder: str, hints: list[dict]) -> dict | None:
+    """First [[folder_hints]] entry whose `match` equals the folder's full path or
+    its last path component (case-insensitive)."""
+    full = folder.lower()
+    leaf = full.rsplit("/", 1)[-1]
+    for h in hints:
+        m = str(h.get("match", "")).strip().lower()
+        if m and m in (full, leaf):
+            return h
+    return None
+
+
+def _folder_note(folder: str, rule: dict | None) -> str:
+    """Tell the model where the user filed this message - their own filters already
+    sorted it, which is a strong clue about project and kind."""
+    if not folder or folder.upper() == "INBOX":
+        return ""
+    note = (f"The user's mail filters filed this message in the folder \"{folder}\". "
+            "The first path segment usually names the job and the last names the kind of "
+            "mail (RFIs, submittals, trade meetings, ...); treat that as a strong clue.")
+    if rule and rule.get("hint"):
+        note += " " + str(rule["hint"]).strip()
+    return note
+
+
+def _classify_one(row, profile: str, owner: str, model: str, important: bool,
+                  hints: list[dict] | None = None) -> Classification:
     floor_note = (
         "The sender is a known work contact — do not rate this below \"normal\" "
         "unless it is clearly automated or marketing."
         if important else ""
     )
+    rule = _folder_rule(row["folder"] or "", hints or [])
+    folder_note = _folder_note(row["folder"] or "", rule)
+    if folder_note:
+        floor_note = (floor_note + "\n\n" + folder_note).strip()
     system = _SYSTEM.format(owner=owner, profile=profile, floor_note=floor_note)
     body = (row["body_text"] or "")[: _MAX_BODY]
     user = _USER.format(
@@ -134,6 +164,8 @@ def _classify_one(row, profile: str, owner: str, model: str, important: bool) ->
                          max_tokens=800, thinking_budget=0)
     c = _coerce(data, floor_normal=important)
     c.model = model
+    if rule and rule.get("no_tasks"):
+        c.implies_task, c.suggested_action = False, None
     return c
 
 
@@ -150,6 +182,7 @@ def run(*, limit: int | None = None, reclassify: bool = False) -> dict:
     pv = aicfg.get("prompt_version", "v1")
     owner = owner_name()
     profile = PROFILE_PATH.read_text(encoding="utf-8")
+    hints = list(cfg.get("folder_hints", []))
 
     counts = {"rules_low": 0, "rules_skip": 0, "ai": 0, "ai_failed": 0}
     with connect() as conn:
@@ -190,7 +223,7 @@ def run(*, limit: int | None = None, reclassify: bool = False) -> dict:
             workers = max(1, int(aicfg.get("max_workers", 4)))
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futs = {
-                    pool.submit(_classify_one, row, profile, owner, model, imp): row
+                    pool.submit(_classify_one, row, profile, owner, model, imp, hints): row
                     for row, imp in ai_jobs
                 }
                 for fut in futs:

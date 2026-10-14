@@ -21,6 +21,10 @@ your mailbox (read-only), the Notion API, and one LLM API.
   resurfaced on a rotation.
 - **Task review queue.** Tasks the AI infers from email wait for a one-keystroke
   accept / edit / reject before anything is created in Notion.
+- **New-drawing lists.** Automated "new sheets / new drawings" notices
+  (Autodesk Forma, Procore) are not turned into one task each. They are parsed
+  into one reviewable task per project, with the sheets as a checklist grouped by
+  drawing set; later notices are appended while that task is open.
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.
@@ -154,9 +158,10 @@ templates.
 
 - Gemini is the only wired-up LLM provider (the client is a small module, so
   adding another is a local change).
-- Two runs started at the same instant (for example both scheduled jobs firing
-  at boot) can collide on a duplicate insert; one run logs an error and the next
-  hourly run recovers. A run-level lock is planned.
+- Runs that write shared state (`run`, `ingest`, `classify`, `mirror`) take a
+  lock in `data/run.lock`. A plain scheduled `run` that finds another in
+  progress skips itself; `run --open-brief` and manual commands wait up to 10
+  minutes for their turn. The OS releases the lock if a run crashes.
 
 ## License
 

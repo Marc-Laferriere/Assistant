@@ -39,6 +39,16 @@ max_backfill_per_folder = 2000
 # Stored body text is truncated to this many characters.
 body_max_chars = 20000
 
+# OPTIONAL. Per-folder guidance for the classifier. Mail filters that file messages
+# into folders are a strong clue about project and kind, so the folder path is
+# always passed to the model; an entry here adds your own words to it.
+# `match` is a folder's full path or its last component (case-insensitive).
+# `no_tasks = true` forces "no task" whatever the model says.
+# [[folder_hints]]
+# match = "Trade Meetings"
+# no_tasks = true
+# hint = "Meeting minutes: never a task. Summarise anything touching my trade."
+
 [ai]
 # Model ids for the thin Gemini REST client (assistant/llm.py).
 # "*-latest" aliases track Google's current recommended model, which avoids

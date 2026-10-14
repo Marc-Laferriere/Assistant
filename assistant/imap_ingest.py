@@ -249,19 +249,10 @@ class ImapIngest:
     # -- upsert ----------------------------------------------------------
     def _upsert(self, pm: ParsedMessage, folder: str, uid: int, uidvalidity: int,
                 is_answered: bool) -> bool:
-        row = self.conn.execute(
-            "SELECT message_id FROM messages WHERE message_id = ?", (pm.message_id,)
-        ).fetchone()
-        if row:
-            self.conn.execute(
-                "UPDATE messages SET folder=?, uid=?, uidvalidity=?, is_answered=?, "
-                "thread_key=?, fetched_at=? WHERE message_id=?",
-                (folder, uid, uidvalidity, int(is_answered), pm.thread_key,
-                 now_iso(), pm.message_id),
-            )
-            return False
-        self.conn.execute(
-            "INSERT INTO messages (message_id, folder, uid, uidvalidity, thread_refs, "
+        # INSERT OR IGNORE is atomic, so a concurrent writer can't slip in between a
+        # lookup and the insert; rowcount says whether this call created the row.
+        cur = self.conn.execute(
+            "INSERT OR IGNORE INTO messages (message_id, folder, uid, uidvalidity, thread_refs, "
             "date_utc, from_name, from_addr, to_addrs, cc_addrs, subject, is_bulk, "
             "has_attach, is_answered, thread_key, size_bytes, body_text, snippet, "
             "fetched_at, first_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -270,7 +261,15 @@ class ImapIngest:
              int(pm.is_bulk), int(pm.has_attach), int(is_answered), pm.thread_key,
              pm.size_bytes, pm.body_text, pm.snippet, now_iso(), now_iso()),
         )
-        return True
+        if cur.rowcount == 1:
+            return True
+        self.conn.execute(
+            "UPDATE messages SET folder=?, uid=?, uidvalidity=?, is_answered=?, "
+            "thread_key=?, fetched_at=? WHERE message_id=?",
+            (folder, uid, uidvalidity, int(is_answered), pm.thread_key,
+             now_iso(), pm.message_id),
+        )
+        return False
 
     # -- flags -----------------------------------------------------------
     def refresh_flags(self, folder: str) -> int:

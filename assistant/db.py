@@ -105,6 +105,30 @@ CREATE TABLE IF NOT EXISTS task_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_candidates_status ON task_candidates(status);
 
+CREATE TABLE IF NOT EXISTS drawing_notices (
+    message_id TEXT PRIMARY KEY,
+    parsed_at  TEXT NOT NULL,
+    n_items    INTEGER NOT NULL DEFAULT 0,
+    extra      TEXT                       -- e.g. "3 more sheet(s) not listed in the email"
+);
+
+CREATE TABLE IF NOT EXISTS drawing_items (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id   TEXT NOT NULL,
+    project      TEXT NOT NULL,           -- canonical Projects-DB name when resolvable
+    set_name     TEXT NOT NULL DEFAULT '',
+    sheet        TEXT NOT NULL,
+    title        TEXT,
+    rev          TEXT,
+    discipline   TEXT,
+    kind         TEXT NOT NULL,           -- A | M | S | other
+    notice_date  TEXT,
+    candidate_id INTEGER,                 -- the 'drawings' task_candidates row it belongs to
+    in_notion    INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (message_id, project, set_name, sheet)
+);
+CREATE INDEX IF NOT EXISTS idx_drawing_items_candidate ON drawing_items(candidate_id);
+
 CREATE TABLE IF NOT EXISTS call_notes (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_text       TEXT NOT NULL,

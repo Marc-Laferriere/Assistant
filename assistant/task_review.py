@@ -14,6 +14,7 @@ import logging
 import re
 from datetime import date as date_cls
 
+from . import drawings
 from . import notion_api as N
 from .config import PROFILE_PATH, SECRET_NOTION_TOKEN, load_config, owner_name
 from .db import connect, init_db, log_event, now_iso
@@ -92,6 +93,10 @@ def resolve_handled(conn) -> int:
 
 def populate_from_email(conn) -> int:
     resolve_handled(conn)
+    try:
+        drawings.process(conn)  # automated new-drawing notices -> one list per project
+    except Exception as exc:  # noqa: BLE001 - must not block ordinary candidates
+        log.exception("drawing lists failed: %s", exc)
     existing = {
         r[0] for r in conn.execute(
             "SELECT message_id FROM task_candidates WHERE message_id IS NOT NULL"
@@ -113,6 +118,8 @@ def populate_from_email(conn) -> int:
     for r in rows:
         if r["message_id"] in existing or _MIRROR_COVERED_RE.match(r["subject"] or ""):
             continue
+        if drawings.notice_kind(r["subject"], r["from_addr"]):
+            continue  # collected into the per-project drawing lists instead
         if _is_handled(conn, r):
             continue
         priority = "High" if r["importance"] == "high" else "Medium"
@@ -271,13 +278,22 @@ def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
     if proj_id:
         props["Project"] = N.relation([proj_id])
 
-    if row["source_type"] == "email":
+    if row["source_type"] in ("email", "drawings"):
         props["Status"] = N.status("Not started")
         props["Added by assistant"] = N.checkbox(True)
         if row.get("detail"):
             props["Origin"] = N.rich_text(row["detail"])
         page = notion.create_page(tasks_db_id, props)
         notion_page_id = page["id"]
+        if row["source_type"] == "drawings":
+            conn.execute("UPDATE task_candidates SET notion_page_id=? WHERE id=?",
+                         (notion_page_id, row["id"]))
+            conn.commit()
+            try:
+                n = drawings.publish_to_page(conn, notion, notion_page_id, row["id"], intro=True)
+                print(f"  -> sheet list added ({n} sheet(s))")
+            except Exception as exc:  # noqa: BLE001 - the hourly run retries the body
+                log.error("task created but sheet list not written yet: %s", exc)
         print(f"  -> created{'  [' + proj_name + ']' if proj_name else ''}")
     else:
         notion.update_page(row["notion_page_id"], props)
@@ -293,9 +309,14 @@ def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
     conn.commit()
 
 
-def _print_candidate(i: int, total: int, row: dict) -> None:
+def _print_candidate(i: int, total: int, row: dict, conn=None) -> None:
     print(f"\n[{i}/{total}] {row['source_type']}")
     print(f"  {row['title']}")
+    if row["source_type"] == "drawings" and conn is not None:
+        if row.get("detail"):
+            print(f"  {row['detail']}")
+        for line in drawings.describe(conn, row["id"]):
+            print(line)
     if row.get("detail") and row["source_type"] == "email":
         print(f"  {row['detail']}")
     if row.get("reason"):
@@ -328,7 +349,7 @@ def run_interactive(*, populate: bool = True) -> None:
         print(f"{len(rows)} candidate(s). [Enter/a]ccept  [e]dit  [r]eject  [s]kip  [q]uit")
         for i, row in enumerate(rows, 1):
             while True:
-                _print_candidate(i, len(rows), row)
+                _print_candidate(i, len(rows), row, conn)
                 choice = input("  > ").strip().lower()
                 if choice in ("a", ""):
                     _push(conn, notion, directory, tasks_db_id, row)

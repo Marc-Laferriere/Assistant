@@ -348,6 +348,11 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+# Commands that write mail/classification/mirror state and so must not overlap.
+_LOCKED_COMMANDS = {"run", "ingest", "classify", "mirror"}
+_LOCK_WAIT_SECONDS = 600
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -357,6 +362,15 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     setup_logging(verbose=args.verbose)
     try:
+        if args.command in _LOCKED_COMMANDS:
+            from .runlock import run_lock
+
+            # A plain scheduled sync just skips if something else is running (the
+            # next hourly run catches up). Anything the user asked for - the
+            # morning brief to open, or a manual command - waits its turn.
+            skippable = args.command == "run" and not args.open_brief
+            with run_lock(args.command, wait_seconds=0 if skippable else _LOCK_WAIT_SECONDS) as ok:
+                return args.func(args) if ok else 0
         return args.func(args)
     except Exception as exc:  # noqa: BLE001 - top-level guard, full detail to logfile
         log.exception("command failed: %s", exc)
