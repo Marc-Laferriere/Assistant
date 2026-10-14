@@ -13,6 +13,7 @@ from .config import BRIEF_DIR, load_config
 from .db import connect, init_db, now_iso
 from .mailthread import has_sent_reply
 from .plan import build as build_plan
+from . import rfis
 
 log = logging.getLogger(__name__)
 
@@ -67,11 +68,19 @@ def build(*, since_hours: int | None = None, open_after: bool | None = None) -> 
         plan_data = {"plan": [], "note": None, "active_count": 0, "left_out": 0,
                      "someday": [], "someday_count": 0}
 
+    try:
+        with connect() as conn3:
+            init_db(conn3)
+            rfi = rfis.brief_data(conn3, window)
+    except Exception as exc:  # noqa: BLE001 - never block the brief
+        log.exception("RFI section failed, brief will omit it: %s", exc)
+        rfi = {"answered": [], "waiting": [], "others": []}
+
     generated = datetime.now().strftime("%A %d %b %Y, %I:%M %p").replace(" 0", " ")
     html = _env().get_template("brief.html.j2").render(
         generated=generated,
         window_hours=window,
-        high=high, normal=normal, low=low, tasks=tasks,
+        high=high, normal=normal, low=low, tasks=tasks, rfi=rfi,
         low_limit=low_limit,
         counts={"high": len(high), "normal": len(normal),
                 "low": len(low), "tasks": len(tasks)},

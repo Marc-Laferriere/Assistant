@@ -14,7 +14,7 @@ import logging
 import re
 from datetime import date as date_cls
 
-from . import drawings
+from . import drawings, rfis
 from . import notion_api as N
 from .config import PROFILE_PATH, SECRET_NOTION_TOKEN, load_config, owner_name
 from .db import connect, init_db, log_event, now_iso
@@ -120,6 +120,8 @@ def populate_from_email(conn) -> int:
             continue
         if drawings.notice_kind(r["subject"], r["from_addr"]):
             continue  # collected into the per-project drawing lists instead
+        if rfis.is_rfi_notice(r["subject"], r["from_addr"]):
+            continue  # tracked by rfis.py (replies to ours / summaries of the rest)
         if _is_handled(conn, r):
             continue
         priority = "High" if r["importance"] == "high" else "Medium"
@@ -317,7 +319,7 @@ def _print_candidate(i: int, total: int, row: dict, conn=None) -> None:
             print(f"  {row['detail']}")
         for line in drawings.describe(conn, row["id"]):
             print(line)
-    if row.get("detail") and row["source_type"] == "email":
+    if row.get("detail") and row["source_type"] in ("email", "rfi_link"):
         print(f"  {row['detail']}")
     if row.get("reason"):
         print(f"  why: {row['reason']}")
@@ -351,6 +353,26 @@ def run_interactive(*, populate: bool = True) -> None:
             while True:
                 _print_candidate(i, len(rows), row, conn)
                 choice = input("  > ").strip().lower()
+                if row["source_type"] == "rfi_link" and choice in ("a", "", "r"):
+                    accepted = choice in ("a", "")
+                    picked = None
+                    options = rfis.link_choices(conn, row["id"]) if accepted else None
+                    if options:
+                        for n, o in enumerate(options, 1):
+                            print(f"    {n}) {o['project'] or '-'} · {o['label']} {o['title']}")
+                        pick = input("  which one of yours? number, or Enter = none of them > ").strip()
+                        if pick.isdigit() and 1 <= int(pick) <= len(options):
+                            picked = options[int(pick) - 1]["id"]
+                        else:
+                            accepted = False
+                    rfis.resolve_link(conn, row["id"], accepted, picked)
+                    conn.execute("UPDATE task_candidates SET status=?, decided_at=? WHERE id=?",
+                                 ("pushed" if accepted else "rejected", now_iso(), row["id"]))
+                    _log_feedback(conn, row, "accepted" if accepted else "rejected",
+                                  None if accepted else "not_mine")
+                    conn.commit()
+                    print("  -> linked to your RFI" if accepted else "  -> marked as someone else's RFI")
+                    break
                 if choice in ("a", ""):
                     _push(conn, notion, directory, tasks_db_id, row)
                     break

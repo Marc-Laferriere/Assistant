@@ -257,6 +257,17 @@ def cmd_run(args: argparse.Namespace) -> int:
             log.exception("%s failed, continuing: %s", step, exc)
 
     try:
+        from . import rfis
+
+        with connect() as conn:
+            init_db(conn)
+            res = rfis.process(conn)
+            if any(res.values()):
+                log.info("rfis: %s", res)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("RFI tracking failed, continuing: %s", exc)
+
+    try:
         with connect() as conn:
             init_db(conn)
             n = populate_from_email(conn)

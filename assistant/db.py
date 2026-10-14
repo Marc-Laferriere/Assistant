@@ -129,6 +129,59 @@ CREATE TABLE IF NOT EXISTS drawing_items (
 );
 CREATE INDEX IF NOT EXISTS idx_drawing_items_candidate ON drawing_items(candidate_id);
 
+-- RFIs we wrote internally, to be matched against the GC's numbering in Procore.
+CREATE TABLE IF NOT EXISTS our_rfis (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project         TEXT,
+    number          INTEGER,             -- our own RFI number when the subject has one
+    label           TEXT,                -- e.g. "RFI-02"
+    title           TEXT,
+    question        TEXT,
+    first_message_id TEXT,
+    sent_at         TEXT,
+    status          TEXT NOT NULL DEFAULT 'internal',  -- internal|submitted|answered|closed
+    procore_rfi_id  INTEGER,
+    task_page_id    TEXT,
+    last_event_at   TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS our_rfi_threads (
+    thread_key  TEXT PRIMARY KEY,
+    our_rfi_id  INTEGER NOT NULL,
+    checked     INTEGER NOT NULL DEFAULT 1   -- 0 = looked at and judged not an RFI
+);
+-- Every RFI that appears in Procore notices (ours or anyone's).
+CREATE TABLE IF NOT EXISTS procore_rfis (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_key   TEXT NOT NULL,
+    project       TEXT,
+    number        INTEGER NOT NULL,
+    title         TEXT,
+    question      TEXT,
+    due           TEXT,
+    asked_by      TEXT,
+    status        TEXT NOT NULL DEFAULT 'open',      -- open|answered|closed
+    our_rfi_id    INTEGER,
+    link_state    TEXT NOT NULL DEFAULT 'none',      -- none|auto|confirmed|asked|other
+    summary       TEXT,
+    summary_at    TEXT,
+    first_seen_at TEXT NOT NULL,
+    UNIQUE (project_key, number)
+);
+CREATE TABLE IF NOT EXISTS rfi_events (
+    message_id     TEXT PRIMARY KEY,
+    procore_rfi_id INTEGER NOT NULL,
+    kind           TEXT NOT NULL,            -- new|response|closed|reopened
+    response_text  TEXT,
+    occurred_at    TEXT,
+    handled        INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS rfi_link_proposals (
+    candidate_id   INTEGER PRIMARY KEY,
+    procore_rfi_id INTEGER NOT NULL,
+    our_rfi_id     INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS call_notes (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_text       TEXT NOT NULL,

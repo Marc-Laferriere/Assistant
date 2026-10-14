@@ -25,6 +25,11 @@ your mailbox (read-only), the Notion API, and one LLM API.
   (Autodesk Forma, Procore) are not turned into one task each. They are parsed
   into one reviewable task per project, with the sheets as a checklist grouped by
   drawing set; later notices are appended while that task is open.
+- **RFI tracking.** Internal RFI emails are registered as "your RFIs"; when the
+  contractor's Procore notice for one arrives it is matched (by subject matter,
+  not number) and the assistant raises a desktop notification plus one Notion task
+  when it is answered, reopened or closed. Other people's RFIs get a short
+  impact summary in the brief, and the brief lists your RFIs still waiting.
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.

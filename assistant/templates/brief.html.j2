@@ -47,6 +47,9 @@
     border-radius:50%; background:var(--accent); color:#fff; font-size:11px; font-weight:700;
     flex:none; margin-top:1px; }
   .someday .dot { background:var(--low); }
+  .rfi { border-left:3px solid var(--normal); }
+  .rfi.answered { border-left-color:var(--high); }
+  .rfi .resp { font-size:13.5px; margin-top:5px; white-space:pre-wrap; }
 </style>
 </head>
 <body>
@@ -61,6 +64,21 @@
     <div class="tally"><b>{{ counts.low }}</b> buried</div>
     <div class="tally"><b>{{ counts.tasks }}</b> possible tasks</div>
   </div>
+
+  {% if rfi.answered %}
+  <h2>Your RFIs: replies</h2>
+  {% for r in rfi.answered %}
+  <div class="item rfi answered">
+    <div class="subject">{{ r.label }} {{ r.title }}</div>
+    <div class="meta">
+      {% if r.project %}<span class="chip">{{ r.project }}</span> · {% endif %}
+      Procore #{{ r.pnum }} · <span class="chip">{{ 'answered and closed' if r.status == 'closed' else 'answered' }}</span>
+      · {{ (r.last_event_at or '')[:10] }}
+    </div>
+    {% if r.response %}<div class="resp">{{ r.response[:700] }}{% if r.response|length > 700 %}…{% endif %}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
 
   <h2>Today's plan</h2>
   {% if plan %}
@@ -115,12 +133,40 @@
   </div>
   {% endmacro %}
 
+  {% if rfi.waiting %}
+  <h2>RFIs waiting on a reply ({{ rfi.waiting|length }})</h2>
+  {% for w in rfi.waiting %}
+  <div class="item rfi">
+    <div class="subject">{{ w.label }} {{ w.title }}</div>
+    <div class="meta">
+      {% if w.project %}<span class="chip">{{ w.project }}</span> · {% endif %}
+      {% if w.pnum %}submitted as Procore #{{ w.pnum }}{% else %}in internal review / not yet in Procore{% endif %}
+      {% if w.days is not none %} · {{ w.days }} day{{ 's' if w.days != 1 }} ago{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
   <h2>Important</h2>
   {% for m in high %}{{ row(m) }}{% else %}<div class="empty">Nothing flagged important.</div>{% endfor %}
 
   {% if tasks %}
   <h2>Possible tasks</h2>
   {% for m in tasks %}{{ row(m, task=True) }}{% endfor %}
+  {% endif %}
+
+  {% if rfi.others %}
+  <h2>Other RFIs</h2>
+  {% for o in rfi.others %}
+  <div class="item rfi">
+    <div class="subject">#{{ o.number }} {{ o.title }}</div>
+    <div class="meta">
+      {% if o.project %}<span class="chip">{{ o.project }}</span> · {% endif %}
+      <span class="chip">{{ o.status }}</span>
+    </div>
+    <div class="reason">{{ o.summary }}</div>
+  </div>
+  {% endfor %}
   {% endif %}
 
   <h2>Can wait</h2>

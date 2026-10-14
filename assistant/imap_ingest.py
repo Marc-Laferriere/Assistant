@@ -100,17 +100,23 @@ def _addr_list(msg, header: str) -> str:
 
 def _body_text(msg, max_chars: int) -> str:
     text = ""
-    try:
-        body = msg.get_body(preferencelist=("plain", "html"))
-    except Exception:  # noqa: BLE001
-        body = None
-    if body is not None:
+    # Some senders (Procore) ship an empty text/plain part next to a full text/html
+    # one, so "plain" must be tried first but only counts if it has real content.
+    for kind in ("plain", "html"):
+        try:
+            body = msg.get_body(preferencelist=(kind,))
+        except Exception:  # noqa: BLE001
+            body = None
+        if body is None:
+            continue
         try:
             content = body.get_content()
         except Exception:  # noqa: BLE001
             content = ""
-        text = html_to_text(content) if body.get_content_subtype() == "html" else content
-    if not text:
+        text = html_to_text(content) if kind == "html" else content
+        if (text or "").strip():
+            break
+    if not (text or "").strip():
         for part in msg.walk():
             if part.get_content_type() == "text/plain":
                 try:
