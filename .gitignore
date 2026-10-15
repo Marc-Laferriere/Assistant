@@ -10,6 +10,7 @@ __pycache__/
 # Personal / identifying configuration - start from the *.example.* templates
 config.toml
 profile.md
+submittal_watch.txt
 
 # Runtime state, mail content, and generated output
 /data/

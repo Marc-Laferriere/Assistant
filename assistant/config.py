@@ -17,6 +17,7 @@ LOG_DIR = PROJECT_ROOT / "logs"
 DB_PATH = DATA_DIR / "assistant.db"
 CAPTURE_PATH = PROJECT_ROOT / "capture.txt"     # Phase 2
 PROFILE_PATH = PROJECT_ROOT / "profile.md"      # Phase 4 classifier context
+SUBMITTAL_WATCH_PATH = PROJECT_ROOT / "submittal_watch.txt"   # plain-text watch list
 BRIEF_DIR = PROJECT_ROOT / "briefs"             # Phase 4 output
 
 # Secret names (keys in the OS credential store under service_name()).

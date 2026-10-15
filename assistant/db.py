@@ -182,6 +182,32 @@ CREATE TABLE IF NOT EXISTS rfi_link_proposals (
     our_rfi_id     INTEGER
 );
 
+-- Procore submittal notices (and watched-for submittal emails), one row per submittal.
+CREATE TABLE IF NOT EXISTS submittals (
+    key           TEXT PRIMARY KEY,        -- procore:<project key>:<number> | mail:<thread key>
+    source        TEXT NOT NULL,           -- procore | mail
+    project       TEXT,
+    number        TEXT,
+    title         TEXT,
+    spec_section  TEXT,
+    response      TEXT,
+    category      TEXT,                    -- ours | watch | other | history (NULL = not judged yet)
+    matched       TEXT,
+    summary       TEXT,
+    task_page_id  TEXT,
+    notified      INTEGER NOT NULL DEFAULT 0,
+    last_event_at TEXT,
+    first_seen_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS submittal_events (
+    message_id TEXT PRIMARY KEY,
+    key        TEXT NOT NULL,
+    kind       TEXT NOT NULL,              -- distributed | approver | mail
+    response   TEXT,
+    occurred_at TEXT,
+    handled    INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS call_notes (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_text       TEXT NOT NULL,

@@ -128,3 +128,9 @@ backfill_closed = false
 [submittal_mirror.project_page_ids]
 "Example Tower" = "00000000-0000-0000-0000-000000000000"
 "Example Annex" = "00000000-0000-0000-0000-000000000000"
+
+# OPTIONAL. Procore submittal notices: the kinds of equipment YOU supply, in words.
+# Those (plus anything on submittal_watch.txt) raise a notification and a task when
+# the submittal is distributed; everything else gets a one-line summary in the brief.
+# [submittals]
+# our_types = "grilles and diffusers (GRD), fire dampers (FD), exhaust fans, make-up air units"

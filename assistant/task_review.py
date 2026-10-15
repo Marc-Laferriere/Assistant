@@ -14,7 +14,7 @@ import logging
 import re
 from datetime import date as date_cls
 
-from . import drawings, rfis
+from . import drawings, rfis, submittals
 from . import notion_api as N
 from .config import PROFILE_PATH, SECRET_NOTION_TOKEN, load_config, owner_name
 from .db import connect, init_db, log_event, now_iso
@@ -122,6 +122,8 @@ def populate_from_email(conn) -> int:
             continue  # collected into the per-project drawing lists instead
         if rfis.is_rfi_notice(r["subject"], r["from_addr"]):
             continue  # tracked by rfis.py (replies to ours / summaries of the rest)
+        if submittals.is_notice(r["subject"], r["from_addr"]):
+            continue  # tracked by submittals.py
         if _is_handled(conn, r):
             continue
         priority = "High" if r["importance"] == "high" else "Medium"

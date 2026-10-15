@@ -30,6 +30,12 @@ your mailbox (read-only), the Notion API, and one LLM API.
   not number) and the assistant raises a desktop notification plus one Notion task
   when it is answered, reopened or closed. Other people's RFIs get a short
   impact summary in the brief, and the brief lists your RFIs still waiting.
+- **Submittal alerts.** When a Procore submittal is distributed, the AI decides
+  whether it is one of your own kinds of equipment (`[submittals] our_types`) or
+  matches your plain-text watch list (`submittal_watch.txt`). Those raise a
+  desktop notification and one Notion task whatever the response; everything
+  else gets a one-line summary in the brief. The watch list is also checked
+  against ordinary email mentioning a "submittal".
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.

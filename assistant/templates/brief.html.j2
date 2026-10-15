@@ -80,6 +80,22 @@
   {% endfor %}
   {% endif %}
 
+  {% if subm.released %}
+  <h2>Submittals released</h2>
+  {% for r in subm.released %}
+  <div class="item rfi answered">
+    <div class="subject">{{ (r.number ~ ' ' ~ r.title)|trim }}</div>
+    <div class="meta">
+      {% if r.project %}<span class="chip">{{ r.project }}</span> · {% endif %}
+      <span class="chip">{{ 'your equipment' if r.category == 'ours' else 'watching: ' ~ r.matched }}</span>
+      {% if r.response %} · <span class="chip">{{ r.response }}</span>{% endif %}
+      · {{ (r.last_event_at or '')[:10] }}
+    </div>
+    {% if r.summary %}<div class="reason">{{ r.summary }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
   <h2>Today's plan</h2>
   {% if plan %}
   {% for t in plan %}
@@ -165,6 +181,18 @@
       <span class="chip">{{ o.status }}</span>
     </div>
     <div class="reason">{{ o.summary }}</div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if subm.others %}
+  <h2>Other submittals</h2>
+  {% for o in subm.others %}
+  <div class="item rfi">
+    <div class="subject">{{ (o.number ~ ' ' ~ o.title)|trim }}</div>
+    <div class="meta">{% if o.project %}<span class="chip">{{ o.project }}</span>{% endif %}
+      {% if o.response %} · <span class="chip">{{ o.response }}</span>{% endif %}</div>
+    {% if o.summary %}<div class="reason">{{ o.summary }}</div>{% endif %}
   </div>
   {% endfor %}
   {% endif %}

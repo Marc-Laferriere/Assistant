@@ -1,0 +1,6 @@
+# Submittals to be notified about the moment they are released.
+# Copy to submittal_watch.txt (git-ignored) and edit. One per line, plain words;
+# lines starting with # are ignored. Matching is by meaning, so wording can differ.
+# A project name can be included: "Example Tower rooftop unit".
+window submittals
+cabinet submittals
