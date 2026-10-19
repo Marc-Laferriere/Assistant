@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import logging
+import os
 import sys
 
 from . import __version__
@@ -239,6 +240,55 @@ def cmd_cleanup_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pdf_folder(args: argparse.Namespace) -> int:
+    from . import pdf_links
+    from .config import SECRET_NOTION_TOKEN, load_config
+    from .projects import ProjectDirectory
+    from .secrets_store import get_secret
+    from . import notion_api as N
+
+    with connect() as conn:
+        init_db(conn)
+        if args.list:
+            rows = pdf_links.list_folders(conn)
+            for r in rows:
+                n = conn.execute("SELECT count(*) FROM pdf_files WHERE folder_id=?", (r["id"],)).fetchone()[0]
+                print(f"{r['id']:3}  {r['project']:22} {n:5} PDFs  {r['path']}")
+            if not rows:
+                print("No PDF folders registered yet.")
+            return 0
+        if args.remove:
+            conn.execute("DELETE FROM pdf_files WHERE folder_id=?", (args.remove,))
+            conn.execute("DELETE FROM pdf_folders WHERE id=?", (args.remove,))
+            conn.commit()
+            print(f"Removed folder {args.remove}.")
+            return 0
+
+        cfg = load_config()
+        directory = ProjectDirectory(N.Notion(get_secret(SECRET_NOTION_TOKEN)),
+                                     cfg["notion"]["projects_db_id"])
+        projects = [name for name, _ in directory.all()]
+        print("Which project is this folder for?")
+        for i, name in enumerate(projects, 1):
+            print(f"  {i:2}) {name}")
+        pick = input("number > ").strip()
+        if not (pick.isdigit() and 1 <= int(pick) <= len(projects)):
+            print("Cancelled.")
+            return 1
+        project = projects[int(pick) - 1]
+        path = input("Folder holding the linked PDFs (paste the path) > ").strip().strip('"')
+        if not path or not os.path.isdir(path):
+            print("That folder isn't reachable from this PC. Nothing saved.")
+            return 1
+        pdf_links.add_folder(conn, project, path)
+        print(f"Saved. {project} -> {path}")
+        print("Reading the file names now (the first time can take a minute)...")
+        pdf_links.scan(conn)
+        n = conn.execute("SELECT count(*) FROM pdf_files WHERE parsed=1").fetchone()[0]
+        print(f"Done: {n} PDFs known. From now on, new drawings are checked against this folder.")
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .capture import process
     from .task_review import populate_from_email
@@ -286,6 +336,17 @@ def cmd_run(args: argparse.Namespace) -> int:
                 log.info("queued %d new task candidate(s) for review", n)
     except Exception as exc:  # noqa: BLE001
         log.exception("task-candidate queue failed: %s", exc)
+
+    try:
+        from . import pdf_links
+
+        with connect() as conn:
+            init_db(conn)
+            res = pdf_links.process(conn)
+            if any(res.values()):
+                log.info("pdf links: %s", res)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("PDF link check failed, continuing: %s", exc)
 
     process()
     _run_mirror()
@@ -351,6 +412,11 @@ def build_parser() -> argparse.ArgumentParser:
                          help="propose Project/Priority/Horizon for pre-assistant open tasks")
     csp.add_argument("--limit", type=int, help="only propose for the first N")
     csp.set_defaults(func=cmd_cleanup_scan)
+
+    pfp = sub.add_parser("pdf-folder", help="register a folder of linked PDFs for a project")
+    pfp.add_argument("--list", action="store_true", help="show registered folders")
+    pfp.add_argument("--remove", type=int, metavar="ID", help="forget a registered folder")
+    pfp.set_defaults(func=cmd_pdf_folder)
 
     sub.add_parser("plan", help="print today's plan + someday resurfacing").set_defaults(func=cmd_plan)
 

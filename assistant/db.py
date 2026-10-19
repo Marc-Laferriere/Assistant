@@ -125,6 +125,8 @@ CREATE TABLE IF NOT EXISTS drawing_items (
     notice_date  TEXT,
     candidate_id INTEGER,                 -- the 'drawings' task_candidates row it belongs to
     in_notion    INTEGER NOT NULL DEFAULT 0,
+    revised      INTEGER NOT NULL DEFAULT 0,   -- this sheet was seen in an earlier notice
+    prev_note    TEXT,                         -- e.g. "rev 1 -> 2" / "also in: <earlier set>"
     UNIQUE (message_id, project, set_name, sheet)
 );
 CREATE INDEX IF NOT EXISTS idx_drawing_items_candidate ON drawing_items(candidate_id);
@@ -208,6 +210,41 @@ CREATE TABLE IF NOT EXISTS submittal_events (
     handled    INTEGER NOT NULL DEFAULT 0
 );
 
+-- Folders of PDFs linked into the user's Revit models, one or more per project.
+CREATE TABLE IF NOT EXISTS pdf_folders (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    project  TEXT NOT NULL,               -- canonical Projects-DB name
+    path     TEXT NOT NULL UNIQUE,
+    added_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS pdf_files (
+    path      TEXT PRIMARY KEY,
+    folder_id INTEGER NOT NULL,
+    name      TEXT NOT NULL,
+    mtime     REAL,
+    sheet     TEXT,                       -- sheet / drawing number parsed from the file name
+    tag       TEXT,                       -- revision tag parsed from the file name (IFC, SI-002, ...)
+    parsed    INTEGER NOT NULL DEFAULT 0
+);
+-- A new-drawings sheet that may need its linked PDF added or updated.
+CREATE TABLE IF NOT EXISTS pdf_updates (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id      INTEGER NOT NULL UNIQUE,  -- drawing_items.id
+    project      TEXT NOT NULL,
+    sheet        TEXT NOT NULL,
+    state        TEXT NOT NULL,            -- open | ok
+    note         TEXT,                     -- what the folder has / lacks
+    sig          TEXT,                     -- candidate-file signature at the last judgement
+    notified     INTEGER NOT NULL DEFAULT 0,
+    task_page_id TEXT,
+    created_at   TEXT NOT NULL,
+    resolved_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS pdf_tasks (
+    project TEXT PRIMARY KEY,
+    page_id TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS call_notes (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_text       TEXT NOT NULL,
@@ -274,6 +311,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Created here (not in SCHEMA) so it works whether thread_key came from a
     # fresh CREATE TABLE or was just added above.
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_key)")
+    dcols = {r[1] for r in conn.execute("PRAGMA table_info(drawing_items)")}
+    if dcols and "revised" not in dcols:
+        conn.execute("ALTER TABLE drawing_items ADD COLUMN revised INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE drawing_items ADD COLUMN prev_note TEXT")
 
 
 def log_event(

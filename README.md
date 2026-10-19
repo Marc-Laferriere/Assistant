@@ -36,6 +36,11 @@ your mailbox (read-only), the Notion API, and one LLM API.
   desktop notification and one Notion task whatever the response; everything
   else gets a one-line summary in the brief. The watch list is also checked
   against ordinary email mentioning a "submittal".
+- **Linked-PDF checks.** Register the folder of PDFs linked into a project's model
+  (`assistant pdf-folder`, or the "Add PDF Folder" launcher). When a new-drawings
+  notice issues a sheet that is missing or only present at an older revision, you
+  get a desktop notification and one checklist task per project, which closes by
+  itself once the matching files appear. Folders are only ever read.
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.

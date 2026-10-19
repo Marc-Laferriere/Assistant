@@ -316,6 +316,9 @@ class SubmittalMirror:
             keep_status = live_status != mirror["last_task_status"]
         if keep_status:
             props.pop("Status", None)
+        elif task_status == self.cfg.task_status_on_close and mirror["last_task_status"] != task_status:
+            # First move into the finished status (e.g. Listed -> Done): stamp it once.
+            props["Date Completed"] = N.date(date_cls.today().isoformat())
         title = self._title(row)
         if self.dry_run:
             log.info("UPDATE  %-40s due %-10s%s", title, row.due or "-",

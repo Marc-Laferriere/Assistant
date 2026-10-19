@@ -112,7 +112,7 @@ closed_source_statuses = ["Ready To Ship"]
 
 # Source status -> Tasks "Status" value (must already exist in the Status property).
 task_status_for_received = "Not started"
-task_status_for_listed = "In progress"
+task_status_for_listed = "Done"   # your part ends at Listed, so it leaves the working list
 task_status_on_close = "Done"
 
 # Rows to ignore entirely (test data).

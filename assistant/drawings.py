@@ -19,11 +19,12 @@ import html
 import logging
 import re
 from collections import defaultdict
+from datetime import date as date_cls
 from dataclasses import dataclass
 
 from . import notion_api as N
 from .config import SECRET_NOTION_TOKEN, load_config
-from .db import now_iso
+from .db import log_event, now_iso
 from .projects import ProjectDirectory
 from .secrets_store import get_secret
 
@@ -35,6 +36,7 @@ _DOWNLOAD_SUBJ = re.compile(r"drawings download", re.I)
 _REVIEW_KINDS = ("A", "M", "S")
 _BLOCK_CHUNK = 90  # Notion allows 100 children per request
 _CLOSED_STATUSES = {"Done", "Archived"}
+_OTHER_SHOWN = 12  # non-A/M/S sheets listed per set before collapsing to "+N more"
 
 
 # --------------------------------------------------------------------------- #
@@ -123,14 +125,14 @@ def parse_notice(kind: str, body: str | None) -> tuple[list[Sheet], str | None]:
 def sheet_kind(sheet: str, discipline: str = "") -> str:
     """'A' / 'M' / 'S' for the disciplines that get a checkbox, else 'other'."""
     d = discipline.lower()
-    if d:
-        if "arch" in d:
-            return "A"
-        if "mech" in d or "hvac" in d:
-            return "M"
-        if "struct" in d:
-            return "S"
-        return "other"
+    # Procore's "discipline" is whatever folders the GC set up ("Access Panel",
+    # "PMP - Mechanical Shaft"), so a miss here falls back to the sheet number.
+    if "arch" in d:
+        return "A"
+    if "mech" in d or "hvac" in d:
+        return "M"
+    if "struct" in d:
+        return "S"
     m = re.match(r"([AMS])[-\s.]?\d", sheet.upper())
     return m.group(1) if m else "other"
 
@@ -161,11 +163,13 @@ def _ingest_notice(conn, directory, msg) -> int:
     n = 0
     for s in sheets:
         project = _project_label(directory, s.project_text)
+        revised, prev_note = _earlier_sighting(conn, msg["message_id"], project, s)
         cur = conn.execute(
             "INSERT OR IGNORE INTO drawing_items (message_id, project, set_name, sheet, title, "
-            "rev, discipline, kind, notice_date) VALUES (?,?,?,?,?,?,?,?,?)",
+            "rev, discipline, kind, notice_date, revised, prev_note) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (msg["message_id"], project, s.set_name, s.sheet, s.title, s.rev, s.discipline,
-             sheet_kind(s.sheet, s.discipline), s.published or (msg["date_utc"] or "")[:10]),
+             sheet_kind(s.sheet, s.discipline), s.published or (msg["date_utc"] or "")[:10],
+             revised, prev_note),
         )
         n += cur.rowcount
     conn.execute(
@@ -173,6 +177,38 @@ def _ingest_notice(conn, directory, msg) -> int:
         "VALUES (?,?,?,?)", (msg["message_id"], now_iso(), n, note),
     )
     return n
+
+
+def _earlier_sighting(conn, message_id: str, project: str, s: Sheet) -> tuple[int, str | None]:
+    """A sheet that already appeared in an earlier notice is a re-issue, not a new sheet."""
+    prev = conn.execute(
+        "SELECT set_name, rev FROM drawing_items WHERE project = ? AND lower(sheet) = lower(?) "
+        "AND message_id != ? ORDER BY id DESC LIMIT 1", (project, s.sheet, message_id)).fetchone()
+    if prev is None:
+        return 0, None
+    if prev["rev"] and s.rev and prev["rev"] != s.rev:
+        return 1, f"rev {prev['rev']} -> {s.rev}"
+    if (prev["set_name"] or "") != (s.set_name or ""):
+        return 1, f"also in: {(prev['set_name'] or 'an earlier set')[:70]}"
+    return 0, None
+
+
+_WORKITEM = re.compile(r"\b(SI|RFI)\s*[-#]?\s*0*(\d+)\b", re.I)
+
+
+def _work_keys(*texts: str | None) -> set[tuple[str, int]]:
+    return {(m.group(1).upper(), int(m.group(2))) for t in texts for m in _WORKITEM.finditer(t or "")}
+
+
+def _related(conn, set_name: str) -> list:
+    """Queued / created email tasks about the SI or RFI this drawing set belongs to."""
+    keys = _work_keys(set_name)
+    if not keys:
+        return []
+    return [r for r in conn.execute(
+        "SELECT id, title, status, notion_page_id FROM task_candidates "
+        "WHERE source_type='email' AND status IN ('proposed','pushed')").fetchall()
+        if _work_keys(r["title"]) & keys]
 
 
 def _project_from_subject(subject: str | None) -> str:
@@ -258,6 +294,8 @@ def _label(i) -> str:
         out += f" - {i['title']}"
     if i["rev"]:
         out += f" (rev {i['rev']})"
+    if i["revised"]:
+        out += f"  [REVISED: {i['prev_note']}]"
     return out
 
 
@@ -277,12 +315,16 @@ def build_blocks(conn, items, *, intro: bool = False) -> list[dict]:
     extras = {r[0]: r[1] for r in conn.execute("SELECT message_id, extra FROM drawing_notices")}
     for (set_name, date), group in _groups(items):
         blocks.append(_heading(f"{set_name}  ({date})" if date else set_name))
+        for rel in _related(conn, set_name):
+            blocks.append(N.paragraph_block(f"For: {rel['title']}"))
         for i in group:
             if i["kind"] in _REVIEW_KINDS:
                 blocks.append(_todo(_label(i)))
         others = [i["sheet"] for i in group if i["kind"] not in _REVIEW_KINDS]
         if others:
-            blocks.append(N.paragraph_block("Other sheets: " + ", ".join(others)))
+            shown = ", ".join(others[:_OTHER_SHOWN])
+            more = f", +{len(others) - _OTHER_SHOWN} more" if len(others) > _OTHER_SHOWN else ""
+            blocks.append(N.paragraph_block(f"Other sheets ({len(others)}): {shown}{more}"))
         notes = sorted({extras[i["message_id"]] for i in group if extras.get(i["message_id"])})
         for n in notes:
             blocks.append(N.paragraph_block(f"Note: {n}"))
@@ -301,20 +343,66 @@ def publish_to_page(conn, notion: N.Notion, page_id: str, candidate_id: int, *,
     conn.execute("UPDATE drawing_items SET in_notion = 1 WHERE candidate_id = ? AND in_notion = 0",
                  (candidate_id,))
     conn.commit()
+    _annotate_related(conn, notion, items)
     return len(items)
 
 
+def _annotate_related(conn, notion: N.Notion, items) -> None:
+    """Tell the SI/RFI task itself that its sheets have arrived."""
+    cache: dict[str, bool] = {}
+    for (set_name, date), group in _groups(items):
+        sheets = ", ".join(i["sheet"] for i in group)
+        for rel in _related(conn, set_name):
+            if rel["status"] != "pushed" or not rel["notion_page_id"]:
+                continue
+            try:
+                if _page_open(notion, rel["notion_page_id"], cache):
+                    notion.append_blocks(rel["notion_page_id"], [N.paragraph_block(
+                        f"Drawings issued for this ({date}): {sheets}. See the new-drawings review task.")])
+            except Exception as exc:  # noqa: BLE001 - a courtesy note, never worth failing over
+                log.warning("could not annotate related task %s: %s", rel["notion_page_id"], exc)
+
+
+def auto_close(conn, notion: N.Notion, cache: dict | None = None) -> int:
+    """Mark a drawing-review task Done once every checkbox in its body is ticked."""
+    cache = cache if cache is not None else {}
+    closed = 0
+    for cand in conn.execute(
+        "SELECT id, title, notion_page_id FROM task_candidates WHERE source_type='drawings' "
+        "AND status='pushed' AND notion_page_id IS NOT NULL").fetchall():
+        try:
+            if not _page_open(notion, cand["notion_page_id"], cache):
+                continue
+            todos = [b for b in notion.iter_block_children(cand["notion_page_id"]) if b["type"] == "to_do"]
+            if todos and all(b["to_do"]["checked"] for b in todos):
+                notion.update_page(cand["notion_page_id"], {
+                    "Status": N.status("Done"), "Date Completed": N.date(date_cls.today().isoformat())})
+                log_event(conn, "drawings_task_autoclosed", notion_task_id=cand["notion_page_id"],
+                          detail=cand["title"])
+                cache[cand["notion_page_id"]] = False
+                closed += 1
+                log.info("all sheets ticked - closed %r", cand["title"])
+        except Exception as exc:  # noqa: BLE001 - retried next cycle
+            log.warning("auto-close check failed for %r: %s", cand["title"], exc)
+    conn.commit()
+    return closed
+
+
 def describe(conn, candidate_id: int) -> list[str]:
-    """Console lines for the review prompt."""
+    """Console lines for the review prompt. A * marks a sheet that is a re-issue."""
     lines = []
     for (set_name, date), group in _groups(_items(conn, candidate_id)):
         review = [i["sheet"] for i in group if i["kind"] in _REVIEW_KINDS]
         others = [i["sheet"] for i in group if i["kind"] not in _REVIEW_KINDS]
         lines.append(f"  - {set_name} ({date})")
+        for rel in _related(conn, set_name):
+            lines.append(f"      for: {rel['title']}")
         if review:
-            lines.append(f"      check: {', '.join(review)}")
+            revised = {i["sheet"] for i in group if i["revised"]}
+            lines.append("      check: " + ", ".join(f"{x}*" if x in revised else x for x in review))
         if others:
-            lines.append(f"      other: {', '.join(others)}")
+            more = f" +{len(others) - _OTHER_SHOWN} more" if len(others) > _OTHER_SHOWN else ""
+            lines.append(f"      other ({len(others)}): {', '.join(others[:_OTHER_SHOWN])}{more}")
     return lines
 
 
@@ -389,4 +477,5 @@ def process(conn, notion: N.Notion | None = None) -> int:
                 log.info("added %d sheet(s) to open drawing-review task %s", n, cand["notion_page_id"])
         except Exception as exc:  # noqa: BLE001 - retried next cycle
             log.error("could not update drawing-review task: %s", exc)
+    auto_close(conn, notion, cache)
     return parsed

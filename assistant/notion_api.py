@@ -106,6 +106,16 @@ class Notion:
     def get_page(self, page_id: str) -> dict[str, Any]:
         return self._request("GET", f"/v1/pages/{page_id}")
 
+    def iter_block_children(self, block_id: str) -> Iterator[dict[str, Any]]:
+        cursor: str | None = None
+        while True:
+            path = f"/v1/blocks/{block_id}/children?page_size=100" + (f"&start_cursor={cursor}" if cursor else "")
+            result = self._request("GET", path)
+            yield from result.get("results", [])
+            if not result.get("has_more"):
+                return
+            cursor = result.get("next_cursor")
+
     def append_blocks(self, page_id: str, blocks: list[dict[str, Any]]) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/blocks/{page_id}/children", {"children": blocks})
 
