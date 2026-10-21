@@ -40,7 +40,28 @@ def _workitem_key(*texts: str | None) -> str | None:
     for text in texts:
         m = _WORKITEM_RE.search(text or "")
         if m:
-            return f"SI-{m.group(1)}" if m.group(1) else f"RFI-{m.group(2)}"
+            return f"SI-{int(m.group(1))}" if m.group(1) else f"RFI-{int(m.group(2))}"
+    return None
+
+
+# Forma "Issue #N" notices: the same issue produces a notice per assignment, comment and
+# status change. Issue numbers restart on every job, so the key includes the project -
+# and with no known project there is no key at all (never merge across jobs on a guess).
+_ISSUE_RE = re.compile(r"\bissue\s*#\s*(\d+)\b", re.IGNORECASE)
+
+
+def _issue_key(project: str | None, *texts: str | None, subject: str | None = None) -> str | None:
+    # Forma subjects read "<Project> - Issue #N ..." / "<Project> - Comment added ... issue #N",
+    # which names the job even when no project tag was recorded.
+    if not project and subject and _ISSUE_RE.search(subject) and " - " in subject:
+        project = subject.split(" - ", 1)[0]
+    proj = re.sub(r"[^a-z0-9]", "", (project or "").lower().replace("&", "and"))
+    if not proj:
+        return None
+    for text in texts:
+        m = _ISSUE_RE.search(text or "")
+        if m:
+            return f"ISSUE-{int(m.group(1))}@{proj}"
     return None
 
 
@@ -102,11 +123,15 @@ def populate_from_email(conn) -> int:
             "SELECT message_id FROM task_candidates WHERE message_id IS NOT NULL"
         )
     }
-    covered_keys = {
-        _workitem_key(r[0]) for r in conn.execute(
-            "SELECT title FROM task_candidates WHERE status != 'rejected'"
-        )
-    } - {None}
+    covered_keys = set()
+    for r in conn.execute(
+        "SELECT tc.title, COALESCE(tc.project, c.project) AS project, m.subject "
+        "FROM task_candidates tc LEFT JOIN messages m ON m.message_id = tc.message_id "
+        "LEFT JOIN classifications c ON c.message_id = tc.message_id WHERE tc.status != 'rejected'"
+    ):
+        covered_keys.add(_workitem_key(r["title"]))
+        covered_keys.add(_issue_key(r["project"], r["title"], subject=r["subject"]))
+    covered_keys.discard(None)
 
     rows = conn.execute(
         "SELECT m.message_id, m.subject, m.from_addr, m.is_answered, m.thread_key, "
@@ -131,9 +156,11 @@ def populate_from_email(conn) -> int:
         priority = "High" if r["importance"] == "high" else "Medium"
         title = r["suggested_action"] or r["subject"] or "(untitled)"
 
-        key = _workitem_key(title, r["subject"])
-        if key and key in covered_keys:
-            log.info("skip %r — %s already has a live candidate/task", title, key)
+        keys = {k for k in (_workitem_key(title, r["subject"]),
+                            _issue_key(r["project"], title, r["subject"], subject=r["subject"])) if k}
+        hit = keys & covered_keys
+        if hit:
+            log.info("skip %r — %s already has a live candidate/task", title, sorted(hit)[0])
             continue
 
         detail = f"From {r['from_addr']}: {r['subject']}"
@@ -143,8 +170,7 @@ def populate_from_email(conn) -> int:
             "('email', ?, ?, ?, ?, ?, 'Active', ?, 'proposed', ?)",
             (r["message_id"], title, detail, priority, r["project"], r["reason"], now_iso()),
         )
-        if key:
-            covered_keys.add(key)
+        covered_keys |= keys
         added += 1
     conn.commit()
     return added
