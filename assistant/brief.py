@@ -13,7 +13,7 @@ from .config import BRIEF_DIR, load_config
 from .db import connect, init_db, now_iso
 from .mailthread import has_sent_reply
 from .plan import build as build_plan
-from . import rfis, submittals
+from . import meetings, rfis, submittals
 
 log = logging.getLogger(__name__)
 
@@ -82,12 +82,19 @@ def build(*, since_hours: int | None = None, open_after: bool | None = None) -> 
     except Exception as exc:  # noqa: BLE001
         log.exception("submittal section failed, brief will omit it: %s", exc)
         subm = {"released": [], "others": []}
+    try:
+        with connect() as conn5:
+            init_db(conn5)
+            meets = meetings.brief_data(conn5)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("meetings section failed, brief will omit it: %s", exc)
+        meets = []
 
     generated = datetime.now().strftime("%A %d %b %Y, %I:%M %p").replace(" 0", " ")
     html = _env().get_template("brief.html.j2").render(
         generated=generated,
         window_hours=window,
-        high=high, normal=normal, low=low, tasks=tasks, rfi=rfi, subm=subm,
+        high=high, normal=normal, low=low, tasks=tasks, rfi=rfi, subm=subm, meets=meets,
         low_limit=low_limit,
         counts={"high": len(high), "normal": len(normal),
                 "low": len(low), "tasks": len(tasks)},

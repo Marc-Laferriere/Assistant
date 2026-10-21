@@ -197,6 +197,32 @@
   {% endfor %}
   {% endif %}
 
+  {% if meets %}
+  <h2>Trade meetings</h2>
+  {% for g in meets %}
+  <div class="item rfi{{ ' answered' if g.company_items }}">
+    <div class="subject">{{ g.project }} · {{ g.date }}</div>
+    {% for area, line in g.company_items %}
+    <div class="reason"><b>Your company:</b> {% if area %}({{ area }}) {% endif %}{{ line }}</div>
+    {% endfor %}
+    {% for a in g.areas %}{% if a.pours %}
+    <div class="reason"><b>Pours and the trade days before them:</b>
+      <ul style="margin:3px 0 0">{% for p in a.pours %}<li><b>{{ p.line }}</b>{% if p.trade_days %} &mdash; trade days: {{ p.trade_days }}{% else %} &mdash; no trade days listed{% endif %}</li>{% endfor %}</ul></div>
+    {% endif %}{% endfor %}
+    {% for a in g.areas %}{% if a.schedule %}
+    <div class="reason"><b>Coming up{% if a.area %} ({{ a.area }}){% endif %}:</b>
+      <ul style="margin:3px 0 0">{% for x in a.schedule %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    {% endif %}{% endfor %}
+    <details><summary>summary</summary>
+      {% for a in g.areas %}
+      {% if a.area %}<div class="meta"><b>{{ a.area }}</b></div>{% endif %}
+      <ul>{% for p in a.points %}<li>{{ p }}</li>{% endfor %}</ul>
+      {% endfor %}
+    </details>
+  </div>
+  {% endfor %}
+  {% endif %}
+
   <h2>Can wait</h2>
   {% for m in normal %}{{ row(m) }}{% else %}<div class="empty">Nothing here.</div>{% endfor %}
 

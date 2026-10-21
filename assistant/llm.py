@@ -4,6 +4,7 @@ dispatch is here so a second provider is a local change, not a rewrite.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import time
@@ -32,8 +33,11 @@ def complete_json(
     max_tokens: int = 1024,
     max_retries: int = 4,
     thinking_budget: int = 0,
+    files: list[tuple[str, bytes]] | None = None,
 ) -> dict:
     """Return the model's JSON response as a dict.
+
+    ``files`` are (mime type, bytes) attachments such as PDFs, sent alongside the prompt.
 
     ``thinking_budget`` 0 disables the model's internal reasoning (right for
     classification/extraction — it otherwise eats the output budget and truncates
@@ -41,12 +45,12 @@ def complete_json(
     """
     if model.startswith(("gemini", "models/gemini")):
         return _gemini_json(model, system, user, schema, temperature, max_tokens,
-                            max_retries, thinking_budget)
+                            max_retries, thinking_budget, files)
     raise LLMError(f"unsupported model {model!r} (only Gemini is wired up)")
 
 
 def _gemini_json(model, system, user, schema, temperature, max_tokens,
-                 max_retries, thinking_budget) -> dict:
+                 max_retries, thinking_budget, files=None) -> dict:
     name = model if model.startswith("models/") else f"models/{model}"
     key = get_secret(SECRET_GEMINI_API_KEY)
     url = f"{_GEMINI_ROOT}/{name}:generateContent"
@@ -60,7 +64,10 @@ def _gemini_json(model, system, user, schema, temperature, max_tokens,
         gen_cfg["responseSchema"] = schema
     body = {
         "systemInstruction": {"parts": [{"text": system}]},
-        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "contents": [{"role": "user", "parts": [
+            *({"inlineData": {"mimeType": mime, "data": base64.b64encode(blob).decode()}}
+              for mime, blob in (files or [])),
+            {"text": user}]}],
         "generationConfig": gen_cfg,
     }
     data = json.dumps(body).encode()
@@ -73,7 +80,7 @@ def _gemini_json(model, system, user, schema, temperature, max_tokens,
             headers={"Content-Type": "application/json", "x-goog-api-key": key},
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=180 if files else 60) as resp:
                 payload = json.load(resp)
             break
         except urllib.error.HTTPError as exc:

@@ -245,6 +245,26 @@ CREATE TABLE IF NOT EXISTS pdf_tasks (
     page_id TEXT NOT NULL
 );
 
+-- Trade-meeting minutes, summarised once per (project, date, area).
+CREATE TABLE IF NOT EXISTS meetings (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    project       TEXT NOT NULL,
+    meeting_date  TEXT NOT NULL,           -- ISO date
+    area          TEXT NOT NULL DEFAULT '',  -- e.g. Tower / Midrise ('' when the job has one meeting)
+    message_id    TEXT NOT NULL,           -- the email the summary was made from
+    points        TEXT,                    -- JSON list: general summary
+    schedule      TEXT,                    -- JSON list: trade starts / slab pour days
+    company_items TEXT,                    -- JSON list: items naming the user's company or trade
+    pours         TEXT,                    -- JSON list: {tower, what, date, trade_days[]}
+    first_seen_at TEXT NOT NULL,
+    UNIQUE (project, meeting_date, area)
+);
+CREATE TABLE IF NOT EXISTS meeting_msgs (
+    message_id TEXT PRIMARY KEY,
+    outcome    TEXT NOT NULL,              -- summarised | duplicate | undated | no_content
+    meeting_id INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS call_notes (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_text       TEXT NOT NULL,
@@ -311,6 +331,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Created here (not in SCHEMA) so it works whether thread_key came from a
     # fresh CREATE TABLE or was just added above.
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_key)")
+    mcols = {r[1] for r in conn.execute("PRAGMA table_info(meetings)")}
+    if mcols and "pours" not in mcols:
+        conn.execute("ALTER TABLE meetings ADD COLUMN pours TEXT")
     dcols = {r[1] for r in conn.execute("PRAGMA table_info(drawing_items)")}
     if dcols and "revised" not in dcols:
         conn.execute("ALTER TABLE drawing_items ADD COLUMN revised INTEGER NOT NULL DEFAULT 0")

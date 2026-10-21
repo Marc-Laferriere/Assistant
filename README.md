@@ -41,6 +41,10 @@ your mailbox (read-only), the Notion API, and one LLM API.
   notice issues a sheet that is missing or only present at an older revision, you
   get a desktop notification and one checklist task per project, which closes by
   itself once the matching files appear. Folders are only ever read.
+- **Trade-meeting summaries.** Minutes (in the email body, or in PDF attachments
+  fetched read-only and read by the AI) are summarised once per meeting, with
+  duplicates merged. The brief shows a general summary, the upcoming schedule
+  entries (slab pours first) and anything naming your company. Never a task.
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.

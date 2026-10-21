@@ -329,6 +329,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         log.exception("submittal tracking failed, continuing: %s", exc)
 
     try:
+        from . import meetings
+
+        with connect() as conn:
+            init_db(conn)
+            res = meetings.process(conn)
+            if any(res.values()):
+                log.info("meetings: %s", res)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("trade meeting summaries failed, continuing: %s", exc)
+
+    try:
         with connect() as conn:
             init_db(conn)
             n = populate_from_email(conn)

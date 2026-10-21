@@ -134,3 +134,10 @@ backfill_closed = false
 # the submittal is distributed; everything else gets a one-line summary in the brief.
 # [submittals]
 # our_types = "grilles and diffusers (GRD), fire dampers (FD), exhaust fans, make-up air units"
+
+# OPTIONAL. Trade-meeting summaries.
+# [meetings]
+# company_names = ["Example Co", "Example Company Ltd"]   # how minutes name your company
+# [[meetings.project_override]]       # one meeting covering a job split into parts in Projects
+# match = "tower"                     # keyword found in the folder name or subject
+# name = "Example Tower"
