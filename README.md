@@ -79,7 +79,7 @@ your mailbox (read-only), the Notion API, and one LLM API.
 | Task name | title | |
 | Status | status | needs `Not started`, `In progress`, `Done`, `Archived` |
 | Due | date | |
-| Priority | select | `Low` / `Medium` / `High` |
+| Priority | select | `Low` / `Medium` / `High`; optionally `Urgent` - set by you only, never by the assistant; pinned to the top of the brief |
 | Horizon | select | `Active` / `Someday` / `Parked` |
 | Project | relation | to your Projects database |
 | Notes | rich text | holds only a short "see body" flag |

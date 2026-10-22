@@ -220,6 +220,7 @@ def populate_cleanup(conn, *, limit: int | None = None) -> int:
         )
     }
     flt = {"and": [
+        {"property": "Priority", "select": {"does_not_equal": "Urgent"}},  # the user's own flag: leave alone
         {"property": "Added by assistant", "checkbox": {"equals": False}},
         {"property": "Status", "status": {"does_not_equal": "Done"}},
         {"property": "Status", "status": {"does_not_equal": "Archived"}},
@@ -341,6 +342,10 @@ def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
                     log.error("task created but SI summary not written: %s", exc)
         print(f"  -> created{'  [' + proj_name + ']' if proj_name else ''}")
     else:
+        # Urgent is only ever set by the user; never overwrite it with a proposed priority.
+        live = notion.get_page(row["notion_page_id"])
+        if N.plain(live["properties"].get("Priority")) == "Urgent":
+            props.pop("Priority", None)
         notion.update_page(row["notion_page_id"], props)
         notion_page_id = row["notion_page_id"]
         print(f"  -> updated{'  [' + proj_name + ']' if proj_name else ''}")
@@ -427,7 +432,9 @@ def run_interactive(*, populate: bool = True) -> None:
                     if d:
                         row["due"] = d
                     p = input(f"  priority Low/Medium/High [{row.get('priority') or ''}]: ").strip()
-                    if p:
+                    if p.strip().lower() == "urgent":
+                        print("  Urgent is only set by you, in Notion - keeping the current priority.")
+                    elif p:
                         row["priority"] = p.title()
                     pr = input(f"  project [{row.get('project') or ''}]: ").strip()
                     if pr:

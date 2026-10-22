@@ -57,6 +57,28 @@
   <h1>Morning brief</h1>
   <div class="sub">{{ generated }} · last {{ window_hours }} h</div>
 
+  {% if urgent %}
+  <h2 style="color:var(--high);border-bottom-color:var(--high)">Urgent</h2>
+  {% for t in urgent %}
+  <div class="item task" style="border-left-color:var(--high)">
+    <div class="top">
+      <span class="num" style="background:var(--high)">!</span>
+      <div style="flex:1">
+        <div>
+          {% if t.url %}<a class="subject-link" href="{{ t.url }}"><span class="subject">{{ t.title }}</span></a>
+          {% else %}<span class="subject">{{ t.title }}</span>{% endif %}
+        </div>
+        <div class="meta">
+          {% if t.project %}<span class="chip">{{ t.project }}</span>{% endif %}
+          {% if t.due %} · due {{ t.due }}{% endif %}
+          {% if t.status %} · {{ t.status }}{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
   <div class="tallies">
     <div class="tally"><b>{{ plan|length }}</b> planned today</div>
     <div class="tally"><b>{{ counts.high }}</b> important</div>

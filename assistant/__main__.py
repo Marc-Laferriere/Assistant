@@ -182,6 +182,11 @@ def cmd_plan(_: argparse.Namespace) -> int:
     from .plan import build
 
     data = build()
+    if data.get("urgent"):
+        print("URGENT:")
+        for t in data["urgent"]:
+            print(f"  ! [{t['project'] or '-'}] {t['title']}{'  due ' + t['due'] if t['due'] else ''}")
+        print()
     print(f"Today's plan ({len(data['plan'])}/{data['active_count']} active tasks):\n")
     for i, t in enumerate(data["plan"], 1):
         print(f"{i}. [{t['project'] or '-'}] {t['title']}"

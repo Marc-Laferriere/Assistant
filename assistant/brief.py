@@ -65,7 +65,7 @@ def build(*, since_hours: int | None = None, open_after: bool | None = None) -> 
         plan_data = build_plan()
     except Exception as exc:  # noqa: BLE001 - brief must render even if planning fails
         log.exception("planning failed, brief will omit it: %s", exc)
-        plan_data = {"plan": [], "note": None, "active_count": 0, "left_out": 0,
+        plan_data = {"urgent": [], "plan": [], "note": None, "active_count": 0, "left_out": 0,
                      "someday": [], "someday_count": 0}
 
     try:
@@ -98,6 +98,7 @@ def build(*, since_hours: int | None = None, open_after: bool | None = None) -> 
         low_limit=low_limit,
         counts={"high": len(high), "normal": len(normal),
                 "low": len(low), "tasks": len(tasks)},
+        urgent=plan_data.get("urgent", []),
         plan=plan_data["plan"], plan_note=plan_data["note"],
         plan_active_count=plan_data["active_count"], plan_left_out=plan_data["left_out"],
         someday=plan_data["someday"], someday_count=plan_data["someday_count"],

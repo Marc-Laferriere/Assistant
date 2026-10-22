@@ -53,7 +53,7 @@ than {max_items} genuinely deserve a slot today, return fewer — don't pad the
 list. Use `note` for one short line about what's left out, only if worth saying.
 Today is {today}."""
 
-_PRIORITY_ORDER = {"High": 0, "Medium": 1, "Low": 2, None: 3}
+_PRIORITY_ORDER = {"Urgent": -1, "High": 0, "Medium": 1, "Low": 2, None: 3}
 
 
 def _notion() -> N.Notion:
@@ -66,22 +66,34 @@ def _fetch_open_tasks(notion, tasks_db_id: str, horizon: str, directory: Project
         {"property": "Status", "status": {"does_not_equal": "Done"}},
         {"property": "Status", "status": {"does_not_equal": "Archived"}},
     ]}
-    out = []
-    for page in notion.iter_database(tasks_db_id, flt=flt):
-        p = page["properties"]
-        rel = p.get("Project", {}).get("relation") or []
-        project = directory.name_for_id(rel[0]["id"]) if rel else None
-        out.append({
-            "id": page["id"],
-            "title": N.plain(p.get("Task name")) or "(untitled)",
-            "due": N.plain(p.get("Due")),
-            "priority": N.plain(p.get("Priority")),
-            "status": N.plain(p.get("Status")),
-            "project": project,
-            "notes": N.plain(p.get("Notes")) or "",
-            "url": page.get("url"),
-        })
-    return out
+    return [_task_from_page(page, directory) for page in notion.iter_database(tasks_db_id, flt=flt)]
+
+
+def _task_from_page(page: dict, directory: ProjectDirectory) -> dict:
+    p = page["properties"]
+    rel = p.get("Project", {}).get("relation") or []
+    return {
+        "id": page["id"],
+        "title": N.plain(p.get("Task name")) or "(untitled)",
+        "due": N.plain(p.get("Due")),
+        "priority": N.plain(p.get("Priority")),
+        "status": N.plain(p.get("Status")),
+        "project": directory.name_for_id(rel[0]["id"]) if rel else None,
+        "notes": N.plain(p.get("Notes")) or "",
+        "url": page.get("url"),
+    }
+
+
+def _fetch_urgent(notion, tasks_db_id: str, directory: ProjectDirectory) -> list[dict]:
+    """Every open task the user marked Urgent, whatever its Horizon. Only the user sets
+    this priority - nothing in the assistant ever does."""
+    flt = {"and": [
+        {"property": "Priority", "select": {"equals": "Urgent"}},
+        {"property": "Status", "status": {"does_not_equal": "Done"}},
+        {"property": "Status", "status": {"does_not_equal": "Archived"}},
+    ]}
+    tasks = [_task_from_page(p, directory) for p in notion.iter_database(tasks_db_id, flt=flt)]
+    return sorted(tasks, key=lambda t: (t["due"] or "9999-99-99", t["title"]))
 
 
 def _fallback_plan(tasks: list[dict], max_items: int) -> list[dict]:
@@ -154,6 +166,15 @@ def build(*, max_items: int | None = None, someday_sample: int | None = None) ->
 
     active = _fetch_open_tasks(notion, tasks_db_id, "Active", directory)
     someday = _fetch_open_tasks(notion, tasks_db_id, "Someday", directory)
+    try:
+        urgent = _fetch_urgent(notion, tasks_db_id, directory)
+    except Exception as exc:  # noqa: BLE001 - the rest of the plan must still render
+        log.error("could not read Urgent tasks: %s", exc)
+        urgent = []
+    # Urgent tasks are pinned above the plan, so they don't also take a plan slot.
+    urgent_ids = {t["id"] for t in urgent}
+    active = [t for t in active if t["id"] not in urgent_ids]
+    someday = [t for t in someday if t["id"] not in urgent_ids]
 
     plan, note = [], None
     if active:
@@ -168,9 +189,10 @@ def build(*, max_items: int | None = None, someday_sample: int | None = None) ->
         someday_picked = _rotate_someday(conn, someday, someday_sample)
 
     left_out = max(0, len(active) - len(plan))
-    log.info("plan: %d/%d active task(s) scheduled, %d someday resurfaced",
-             len(plan), len(active), len(someday_picked))
+    log.info("plan: %d urgent, %d/%d active task(s) scheduled, %d someday resurfaced",
+             len(urgent), len(plan), len(active), len(someday_picked))
     return {
+        "urgent": urgent,
         "plan": plan,
         "note": note,
         "active_count": len(active),
