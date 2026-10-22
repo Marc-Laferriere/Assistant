@@ -340,6 +340,17 @@ def cmd_run(args: argparse.Namespace) -> int:
         log.exception("trade meeting summaries failed, continuing: %s", exc)
 
     try:
+        from . import si_docs
+
+        with connect() as conn:
+            init_db(conn)
+            res = si_docs.process(conn)
+            if any(res.values()):
+                log.info("si documents: %s", res)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Site Instruction documents failed, continuing: %s", exc)
+
+    try:
         with connect() as conn:
             init_db(conn)
             n = populate_from_email(conn)

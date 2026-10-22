@@ -48,6 +48,13 @@ your mailbox (read-only), the Notion API, and one LLM API.
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.
+- **Site Instruction documents.** Procore SI notices carry no attachment, only
+  links. The hourly run follows them (the cover sheet and each file under
+  "Attachments:"), saves the PDFs under `data/attachments/`, has the AI read
+  them, and puts what changed, the sheets, anything touching ductwork, and the
+  requested response deadline on the proposed task. Downloads are limited to
+  procore.com (and the storage it redirects to), must be real PDFs, and are capped
+  in size; nothing is opened or executed.
 - **Optional mirror.** One-way sync of a secondary Notion database (a status
   queue maintained by some other tool) into the task list, with a
   "hand-off" state that tracks an item without nagging you about it.

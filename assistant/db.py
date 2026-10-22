@@ -265,6 +265,15 @@ CREATE TABLE IF NOT EXISTS meeting_msgs (
     meeting_id INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS si_docs (
+    message_id  TEXT PRIMARY KEY,         -- the Procore SI notice
+    status      TEXT NOT NULL,            -- done | no_pdf | gone (email no longer on the server)
+    task_title  TEXT,                     -- suggested task title from the document
+    summary     TEXT,                     -- JSON from the AI, see si_docs._SCHEMA
+    files       TEXT,                     -- JSON list of {name, path, read}
+    fetched_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS call_notes (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_text       TEXT NOT NULL,

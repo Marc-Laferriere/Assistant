@@ -59,6 +59,12 @@ max_body_chars = 4000         # email body sent to the model per message
 max_workers = 4               # parallel classification calls
 prompt_version = "v1"         # bump when you change the classifier prompt
 
+# OPTIONAL. Procore Site Instruction PDFs (see README). All keys shown are the defaults.
+# [si_documents]
+# enabled = true
+# lookback_days = 14     # only notices this recent are fetched
+# max_file_mb = 25      # larger files are skipped
+
 [brief]
 window_hours = 30             # messages first seen within this window go in the brief
 open_after_build = false      # open the HTML in the browser when built

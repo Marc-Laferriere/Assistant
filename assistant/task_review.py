@@ -14,7 +14,7 @@ import logging
 import re
 from datetime import date as date_cls
 
-from . import drawings, meetings, rfis, submittals
+from . import drawings, meetings, rfis, si_docs, submittals
 from . import notion_api as N
 from .config import PROFILE_PATH, SECRET_NOTION_TOKEN, load_config, owner_name
 from .db import connect, init_db, log_event, now_iso
@@ -155,6 +155,9 @@ def populate_from_email(conn) -> int:
             continue
         priority = "High" if r["importance"] == "high" else "Medium"
         title = r["suggested_action"] or r["subject"] or "(untitled)"
+        doc = si_docs.for_message(conn, r["message_id"])  # Site Instruction PDFs, already read
+        if doc and doc["task_title"]:
+            title = doc["task_title"]
 
         keys = {k for k in (_workitem_key(title, r["subject"]),
                             _issue_key(r["project"], title, r["subject"], subject=r["subject"])) if k}
@@ -164,6 +167,8 @@ def populate_from_email(conn) -> int:
             continue
 
         detail = f"From {r['from_addr']}: {r['subject']}"
+        if doc:
+            detail = si_docs.origin_text(detail, doc)
         conn.execute(
             "INSERT INTO task_candidates (source_type, message_id, title, detail, "
             "priority, project, horizon, reason, status, created_at) VALUES "
@@ -326,6 +331,14 @@ def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
                 print(f"  -> sheet list added ({n} sheet(s))")
             except Exception as exc:  # noqa: BLE001 - the hourly run retries the body
                 log.error("task created but sheet list not written yet: %s", exc)
+        elif row.get("message_id"):
+            doc = si_docs.for_message(conn, row["message_id"])
+            if doc:
+                try:
+                    si_docs.publish_to_page(notion, notion_page_id, doc)
+                    print("  -> Site Instruction summary added to the page")
+                except Exception as exc:  # noqa: BLE001 - the task exists; only the body is missing
+                    log.error("task created but SI summary not written: %s", exc)
         print(f"  -> created{'  [' + proj_name + ']' if proj_name else ''}")
     else:
         notion.update_page(row["notion_page_id"], props)
