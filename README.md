@@ -45,6 +45,7 @@ your mailbox (read-only), the Notion API, and one LLM API.
   fetched read-only and read by the AI) are summarised once per meeting, with
   duplicates merged. The brief shows a general summary, the upcoming schedule
   entries (slab pours first) and anything naming your company. Never a task.
+- **Add to another task.** In the review queue, `t` folds an item into a related task (another queued item or one already in Notion) instead of rejecting it: the AI drafts a one-line note of what it adds, you confirm it, the note goes into that task's body and the higher priority and earlier due date carry over. The assistant suggests a target when it sees one, but never merges by itself.
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.

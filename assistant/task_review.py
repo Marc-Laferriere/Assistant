@@ -14,7 +14,7 @@ import logging
 import re
 from datetime import date as date_cls
 
-from . import drawings, meetings, rfis, si_docs, submittals
+from . import drawings, meetings, merging, rfis, si_docs, submittals
 from . import notion_api as N
 from .config import PROFILE_PATH, SECRET_NOTION_TOKEN, load_config, owner_name
 from .db import connect, init_db, log_event, now_iso
@@ -178,6 +178,10 @@ def populate_from_email(conn) -> int:
         covered_keys |= keys
         added += 1
     conn.commit()
+    try:
+        merging.suggest(conn)  # spot items that look like part of an existing task
+    except Exception as exc:  # noqa: BLE001 - suggestions are a courtesy, never block the queue
+        log.exception("merge suggestions failed: %s", exc)
     return added
 
 
@@ -302,6 +306,9 @@ def _reject(conn, notion, row: dict) -> None:
     )
     _log_feedback(conn, row, "rejected", reason)
     conn.commit()
+    back = merging.unmerge(conn, row["id"])
+    if back:
+        print(f"  -> {back} item(s) that were added to this one are back in the queue (next review)")
 
 
 def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
@@ -341,6 +348,12 @@ def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
                 except Exception as exc:  # noqa: BLE001 - the task exists; only the body is missing
                     log.error("task created but SI summary not written: %s", exc)
         print(f"  -> created{'  [' + proj_name + ']' if proj_name else ''}")
+        try:
+            n_merged = merging.apply_pending_merges(conn, notion, row["id"], notion_page_id)
+            if n_merged:
+                print(f"  -> {n_merged} item(s) added to it are now in its notes")
+        except Exception as exc:  # noqa: BLE001 - the task exists; the notes can be re-added by hand
+            log.error("could not write merged notes onto %r: %s", row["title"], exc)
     else:
         # Urgent is only ever set by the user; never overwrite it with a proposed priority.
         live = notion.get_page(row["notion_page_id"])
@@ -371,6 +384,10 @@ def _print_candidate(i: int, total: int, row: dict, conn=None) -> None:
         print(f"  {row['detail']}")
     if row.get("reason"):
         print(f"  why: {row['reason']}")
+    if conn is not None and row["source_type"] == "email":
+        hint = merging.suggestion_line(conn, row["id"])
+        if hint:
+            print(f"  ** {hint}")
     print(f"  project={row.get('project') or '-'}  priority={row.get('priority') or '-'}  "
           f"horizon={row.get('horizon')}  due={row.get('due') or '-'}")
 
@@ -396,8 +413,12 @@ def run_interactive(*, populate: bool = True) -> None:
         directory = ProjectDirectory(notion, cfg["notion"]["projects_db_id"])
         tasks_db_id = cfg["notion"]["tasks_db_id"]
 
-        print(f"{len(rows)} candidate(s). [Enter/a]ccept  [e]dit  [r]eject  [s]kip  [q]uit")
+        print(f"{len(rows)} candidate(s). [Enter/a]ccept  [e]dit  [r]eject  add [t]o...  [s]kip  [q]uit")
         for i, row in enumerate(rows, 1):
+            fresh = conn.execute("SELECT * FROM task_candidates WHERE id=?", (row["id"],)).fetchone()
+            if fresh is None or fresh["status"] != "proposed":
+                continue  # already merged into something earlier in this session
+            row = dict(fresh)
             while True:
                 _print_candidate(i, len(rows), row, conn)
                 choice = input("  > ").strip().lower()
@@ -440,6 +461,10 @@ def run_interactive(*, populate: bool = True) -> None:
                     if pr:
                         row["project"] = pr
                     continue
+                if choice == "t" and row["source_type"] == "email":
+                    if merging.interactive_merge(conn, notion, directory, row):
+                        break
+                    continue
                 if choice == "r":
                     _reject(conn, notion, row)
                     break
@@ -448,7 +473,7 @@ def run_interactive(*, populate: bool = True) -> None:
                 if choice == "q":
                     print("Stopping — remaining candidates stay queued for next time.")
                     return
-                print("  ?  a=accept  e=edit  r=reject  s=skip  q=quit")
+                print("  ?  a=accept  e=edit  r=reject  t=add to another task  s=skip  q=quit")
     print("\nDone.")
 
 

@@ -274,6 +274,24 @@ CREATE TABLE IF NOT EXISTS si_docs (
     fetched_at  TEXT NOT NULL
 );
 
+-- Review queue: "add to" another task instead of accepting or rejecting an item.
+CREATE TABLE IF NOT EXISTS merge_suggestions (
+    candidate_id INTEGER PRIMARY KEY,
+    target_kind  TEXT,                    -- candidate | notion (NULL = looked, found nothing)
+    target_ref   TEXT,                    -- queue item id or Notion page id
+    target_title TEXT,
+    note         TEXT,                    -- what the new item adds
+    created_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS candidate_merges (
+    candidate_id INTEGER PRIMARY KEY,     -- the item that was merged away
+    target_ref   TEXT NOT NULL,           -- the queued item it was added to
+    note         TEXT NOT NULL,
+    detail       TEXT,
+    created_at   TEXT NOT NULL,
+    applied      INTEGER NOT NULL DEFAULT 0   -- 1 once written into the target's Notion page
+);
+
 CREATE TABLE IF NOT EXISTS call_notes (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     raw_text       TEXT NOT NULL,
