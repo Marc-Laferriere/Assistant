@@ -60,8 +60,12 @@ _JUDGE_SYSTEM = (
     "given the existing PDF files for that sheet in the user's folder, with the revision tag "
     "read from each file name. Decide whether ANY existing file is the issued revision, "
     "matching tags by meaning (SI-002 = SI#2 = SI 002; the set name or its number identifies "
-    "the revision). has=true only if you are confident; if the files are older revisions or "
-    "you are unsure, has=false. In `reason` say briefly what the folder has, e.g. 'has SI-046'.")
+    "the revision). A re-issue (Re-IFC, Re-Issued for ..., a revision suffix like R1/R2) is a "
+    "DIFFERENT revision from the original issue and may contain changes: never treat a "
+    "re-issue as satisfying the original, or the original as satisfying a re-issue, and an "
+    "R1 does not satisfy an R2. has=true only if you are confident; if the files are older "
+    "revisions or you are unsure, has=false. In `reason` say briefly what the folder has, "
+    "e.g. 'has SI-046'.")
 
 
 def _norm(s: str | None) -> str:
