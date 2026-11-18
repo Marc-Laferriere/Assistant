@@ -147,3 +147,18 @@ backfill_closed = false
 # [[meetings.project_override]]       # one meeting covering a job split into parts in Projects
 # match = "tower"                     # keyword found in the folder name or subject
 # name = "Example Tower"
+
+# OPTIONAL. A colleague's Notion page with a table of the RFIs they send, used as a
+# read-only secondary source: a Forma issue that an RFI already covers is ticked off
+# the issues list. Share the page with the integration; it is never written to.
+# [colleague_page]
+# page_id = "00000000-0000-0000-0000-000000000000"
+# project = "Example Tower"                  # the Projects-DB job its RFIs belong to
+# rfi_db_title = "RFIs"                      # title of the database on that page
+# subject_prop = "Subject"
+# status_prop = "Status"
+# notes_prop = "Notes"
+# number_props = ["Our #", "GC #"]           # columns shown as the RFI's numbers
+# raised_statuses = ["Sent", "Answered", "Resolved"]   # has gone out: covers an issue
+# draft_statuses = ["Draft"]                 # only noted, the issue stays open
+# cancelled_statuses = ["Cancelled"]         # covers nothing

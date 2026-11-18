@@ -465,10 +465,15 @@ def process(conn, notion: N.Notion | None = None, *, notify: bool = True) -> dic
         log.info("RFI tracking enabled")
     else:
         since = row[0]
-    out = {"registered": _register_internal(conn, directory),
-           "notices": _ingest_notices(conn, directory, since)}
+    from . import rfi_email
+
+    out = {"registered": _register_internal(conn, directory)}
+    out["pdf_titles"] = rfi_email.enrich_from_pdfs(conn)
+    out["notices"] = _ingest_notices(conn, directory, since)
     out["linked"], out["asked"] = _match(conn)
+    out["email_replies"] = rfi_email.detect(conn, since)
     out["acted"] = _handle_events(conn, notion, directory, notify)
+    out["acted"] += rfi_email.handle(conn, notion, directory, notify)
     out["summaries"] = _summarise_others(conn)
     return out
 
@@ -479,7 +484,7 @@ def process(conn, notion: N.Notion | None = None, *, notify: bool = True) -> dic
 def brief_data(conn, window_hours: int) -> dict:
     cut = (datetime.now(timezone.utc) - timedelta(hours=max(window_hours, 48))).isoformat()
     answered = conn.execute(
-        "SELECT o.*, p.number pnum, p.title ptitle FROM our_rfis o JOIN procore_rfis p ON p.id=o.procore_rfi_id "
+        "SELECT o.*, p.number pnum, p.title ptitle FROM our_rfis o LEFT JOIN procore_rfis p ON p.id=o.procore_rfi_id "
         "WHERE o.status IN ('answered','closed') AND o.last_event_at >= ? ORDER BY o.last_event_at DESC",
         (cut,)).fetchall()
     out_answered = []
@@ -487,7 +492,12 @@ def brief_data(conn, window_hours: int) -> dict:
         resp = conn.execute(
             "SELECT response_text FROM rfi_events WHERE procore_rfi_id=? AND response_text != '' "
             "ORDER BY occurred_at DESC LIMIT 1", (o["procore_rfi_id"],)).fetchone()
-        out_answered.append(dict(o) | {"response": resp["response_text"] if resp else ""})
+        text = resp["response_text"] if resp else ""
+        if not text:  # answered by email rather than a Procore notice
+            em = conn.execute("SELECT response_text FROM rfi_email_events WHERE our_rfi_id=? "
+                              "ORDER BY occurred_at DESC LIMIT 1", (o["id"],)).fetchone()
+            text = em["response_text"] if em else ""
+        out_answered.append(dict(o) | {"response": text})
     waiting = [dict(r) for r in conn.execute(
         "SELECT o.*, p.number pnum FROM our_rfis o LEFT JOIN procore_rfis p ON p.id=o.procore_rfi_id "
         "WHERE o.status IN ('internal','submitted') ORDER BY o.sent_at").fetchall()]

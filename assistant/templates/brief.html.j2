@@ -94,7 +94,7 @@
     <div class="subject">{{ r.label }} {{ r.title }}</div>
     <div class="meta">
       {% if r.project %}<span class="chip">{{ r.project }}</span> · {% endif %}
-      Procore #{{ r.pnum }} · <span class="chip">{{ 'answered and closed' if r.status == 'closed' else 'answered' }}</span>
+      {% if r.pnum %}Procore #{{ r.pnum }}{% else %}reply by email{% endif %} · <span class="chip">{{ 'answered and closed' if r.status == 'closed' else 'answered' }}</span>
       · {{ (r.last_event_at or '')[:10] }}
     </div>
     {% if r.response %}<div class="resp">{{ r.response[:700] }}{% if r.response|length > 700 %}…{% endif %}</div>{% endif %}

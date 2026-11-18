@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS task_candidates (
     reason         TEXT,
     status         TEXT NOT NULL DEFAULT 'proposed',  -- proposed|accepted|rejected|pushed
     created_at     TEXT NOT NULL,
-    decided_at     TEXT
+    decided_at     TEXT,
+    group_key      TEXT                -- items sharing a key are one piece of work (e.g. one of our RFIs)
 );
 CREATE INDEX IF NOT EXISTS idx_candidates_status ON task_candidates(status);
 
@@ -131,6 +132,46 @@ CREATE TABLE IF NOT EXISTS drawing_items (
 );
 CREATE INDEX IF NOT EXISTS idx_drawing_items_candidate ON drawing_items(candidate_id);
 
+-- Forma issue notices -> one list per project (see forma_issues.py).
+CREATE TABLE IF NOT EXISTS forma_issue_notices (
+    message_id TEXT PRIMARY KEY,
+    parsed_at  TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS forma_issues (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project         TEXT NOT NULL,
+    number          INTEGER NOT NULL,         -- Forma restarts numbering per job
+    title           TEXT,
+    status          TEXT,                     -- as Forma reports it, lower-case
+    assignee        TEXT,
+    last_comment    TEXT,
+    n_comments      INTEGER NOT NULL DEFAULT 0,
+    last_notice_at  TEXT,
+    candidate_id    INTEGER,                  -- the 'issues' task_candidates row it belongs to
+    block_id        TEXT,                     -- its checkbox in the Notion task body
+    synced_text     TEXT,                     -- what the checkbox last said
+    synced_checked  INTEGER,                  -- what we last set it to
+    UNIQUE (project, number)
+);
+-- An issue judged to be covered by an RFI (ours). Whether it still counts is
+-- worked out each run from that RFI's current status, so a cancelled RFI reopens it.
+CREATE TABLE IF NOT EXISTS forma_issue_rfis (
+    issue_id   INTEGER NOT NULL,
+    rfi_key    TEXT NOT NULL,                 -- 'page:<id>' (colleague tracker) | 'our:<id>'
+    label      TEXT,
+    matched_at TEXT NOT NULL,
+    PRIMARY KEY (issue_id, rfi_key)
+);
+-- Read-only copy of the RFI rows in a colleague's tracker (colleague_notion.py).
+CREATE TABLE IF NOT EXISTS colleague_rfis (
+    page_id      TEXT PRIMARY KEY,
+    subject      TEXT,
+    status       TEXT,
+    numbers      TEXT,                        -- e.g. "RFI-03 / GC-RFI-014"
+    notes        TEXT,
+    refreshed_at TEXT NOT NULL
+);
+
 -- RFIs we wrote internally, to be matched against the GC's numbering in Procore.
 CREATE TABLE IF NOT EXISTS our_rfis (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,6 +186,7 @@ CREATE TABLE IF NOT EXISTS our_rfis (
     procore_rfi_id  INTEGER,
     task_page_id    TEXT,
     last_event_at   TEXT,
+    pdf_read        INTEGER NOT NULL DEFAULT 0,   -- 1 once the RFI's own PDF has been read
     created_at      TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS our_rfi_threads (
@@ -177,6 +219,14 @@ CREATE TABLE IF NOT EXISTS rfi_events (
     response_text  TEXT,
     occurred_at    TEXT,
     handled        INTEGER NOT NULL DEFAULT 0
+);
+-- A reply to one of our RFIs that arrived by email (forwarded or direct) instead of a Procore notice.
+CREATE TABLE IF NOT EXISTS rfi_email_events (
+    message_id    TEXT PRIMARY KEY,
+    our_rfi_id    INTEGER,                 -- NULL = looked at, not a reply to one of ours
+    response_text TEXT,
+    occurred_at   TEXT,
+    handled       INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS rfi_link_proposals (
     candidate_id   INTEGER PRIMARY KEY,
@@ -358,6 +408,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # Created here (not in SCHEMA) so it works whether thread_key came from a
     # fresh CREATE TABLE or was just added above.
     conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_key)")
+    ocols = {r[1] for r in conn.execute("PRAGMA table_info(our_rfis)")}
+    if ocols and "pdf_read" not in ocols:
+        conn.execute("ALTER TABLE our_rfis ADD COLUMN pdf_read INTEGER NOT NULL DEFAULT 0")
+    tcols = {r[1] for r in conn.execute("PRAGMA table_info(task_candidates)")}
+    if tcols and "group_key" not in tcols:
+        conn.execute("ALTER TABLE task_candidates ADD COLUMN group_key TEXT")
     mcols = {r[1] for r in conn.execute("PRAGMA table_info(meetings)")}
     if mcols and "pours" not in mcols:
         conn.execute("ALTER TABLE meetings ADD COLUMN pours TEXT")

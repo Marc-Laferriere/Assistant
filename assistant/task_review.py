@@ -14,7 +14,7 @@ import logging
 import re
 from datetime import date as date_cls
 
-from . import drawings, meetings, merging, rfis, si_docs, submittals
+from . import drawings, forma_issues, meetings, merging, rfi_email, rfis, si_docs, submittals
 from . import notion_api as N
 from .config import PROFILE_PATH, SECRET_NOTION_TOKEN, load_config, owner_name
 from .db import connect, init_db, log_event, now_iso
@@ -112,12 +112,45 @@ def resolve_handled(conn) -> int:
     return resolved
 
 
+def _fold_into_group(conn, cand_id: int, group_key: str) -> bool:
+    """One task per piece of work: fold a new candidate into the first live task that shares
+    its group key (e.g. the review comments on one of our RFIs). True if it was folded."""
+    target = conn.execute(
+        "SELECT id, title, status, notion_page_id FROM task_candidates WHERE group_key = ? AND id != ? "
+        "AND source_type = 'email' AND status IN ('proposed', 'pushed') ORDER BY id LIMIT 1",
+        (group_key, cand_id)).fetchone()
+    if target is None:
+        return False
+    cand = dict(conn.execute("SELECT * FROM task_candidates WHERE id = ?", (cand_id,)).fetchone())
+    try:
+        if target["status"] == "proposed":
+            merging.apply_merge(conn, None, cand, {"kind": "candidate", "ref": str(target["id"]),
+                                                   "title": target["title"]}, cand["title"])
+        else:
+            if not target["notion_page_id"]:
+                return False
+            notion = _notion()
+            if not drawings._page_open(notion, target["notion_page_id"], {}):
+                return False  # that task is finished: this is a new piece of work
+            merging.apply_merge(conn, notion, cand, {"kind": "notion", "ref": target["notion_page_id"],
+                                                     "title": target["title"]}, cand["title"])
+        log.info("folded %r into %r", cand["title"], target["title"])
+        return True
+    except Exception as exc:  # noqa: BLE001 - leave it as its own candidate rather than lose it
+        log.warning("could not fold %r into the existing task: %s", cand["title"], exc)
+        return False
+
+
 def populate_from_email(conn) -> int:
     resolve_handled(conn)
     try:
         drawings.process(conn)  # automated new-drawing notices -> one list per project
     except Exception as exc:  # noqa: BLE001 - must not block ordinary candidates
         log.exception("drawing lists failed: %s", exc)
+    try:
+        forma_issues.process(conn)  # Forma issue notices -> one checklist per project
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Forma issue lists failed: %s", exc)
     existing = {
         r[0] for r in conn.execute(
             "SELECT message_id FROM task_candidates WHERE message_id IS NOT NULL"
@@ -133,6 +166,7 @@ def populate_from_email(conn) -> int:
         covered_keys.add(_issue_key(r["project"], r["title"], subject=r["subject"]))
     covered_keys.discard(None)
 
+    reply_ids = rfi_email.reply_message_ids(conn)
     rows = conn.execute(
         "SELECT m.message_id, m.subject, m.from_addr, m.is_answered, m.thread_key, "
         "m.date_utc, c.importance, c.project, c.suggested_action, c.reason "
@@ -145,12 +179,16 @@ def populate_from_email(conn) -> int:
             continue
         if drawings.notice_kind(r["subject"], r["from_addr"]):
             continue  # collected into the per-project drawing lists instead
+        if forma_issues.is_notice(r["subject"], r["from_addr"]):
+            continue  # collected into the per-project Forma issues list instead
         if rfis.is_rfi_notice(r["subject"], r["from_addr"]):
             continue  # tracked by rfis.py (replies to ours / summaries of the rest)
         if submittals.is_notice(r["subject"], r["from_addr"]):
             continue  # tracked by submittals.py
         if meetings.is_meeting_notice(r["subject"]):
             continue  # summarised by meetings.py, never a task
+        if r["message_id"] in reply_ids:
+            continue  # a reply to one of our RFIs: tracked by rfi_email.py
         if _is_handled(conn, r):
             continue
         priority = "High" if r["importance"] == "high" else "Medium"
@@ -169,14 +207,16 @@ def populate_from_email(conn) -> int:
         detail = f"From {r['from_addr']}: {r['subject']}"
         if doc:
             detail = si_docs.origin_text(detail, doc)
-        conn.execute(
+        gkey = rfi_email.group_key_for_thread(conn, r["thread_key"])
+        cur = conn.execute(
             "INSERT INTO task_candidates (source_type, message_id, title, detail, "
-            "priority, project, horizon, reason, status, created_at) VALUES "
-            "('email', ?, ?, ?, ?, ?, 'Active', ?, 'proposed', ?)",
-            (r["message_id"], title, detail, priority, r["project"], r["reason"], now_iso()),
+            "priority, project, horizon, reason, status, created_at, group_key) VALUES "
+            "('email', ?, ?, ?, ?, ?, 'Active', ?, 'proposed', ?, ?)",
+            (r["message_id"], title, detail, priority, r["project"], r["reason"], now_iso(), gkey),
         )
         covered_keys |= keys
-        added += 1
+        if not (gkey and _fold_into_group(conn, cur.lastrowid, gkey)):
+            added += 1
     conn.commit()
     try:
         merging.suggest(conn)  # spot items that look like part of an existing task
@@ -323,7 +363,7 @@ def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
     if proj_id:
         props["Project"] = N.relation([proj_id])
 
-    if row["source_type"] in ("email", "drawings"):
+    if row["source_type"] in ("email", "drawings", "issues"):
         props["Status"] = N.status("Not started")
         props["Added by assistant"] = N.checkbox(True)
         if row.get("detail"):
@@ -339,6 +379,15 @@ def _push(conn, notion, directory, tasks_db_id, row: dict) -> None:
                 print(f"  -> sheet list added ({n} sheet(s))")
             except Exception as exc:  # noqa: BLE001 - the hourly run retries the body
                 log.error("task created but sheet list not written yet: %s", exc)
+        elif row["source_type"] == "issues":
+            conn.execute("UPDATE task_candidates SET notion_page_id=? WHERE id=?",
+                         (notion_page_id, row["id"]))
+            conn.commit()
+            try:
+                n = forma_issues.sync_candidate(conn, notion, notion_page_id, row["id"], intro=True)
+                print(f"  -> issue list added ({n} item(s))")
+            except Exception as exc:  # noqa: BLE001 - the hourly run retries the body
+                log.error("task created but issue list not written yet: %s", exc)
         elif row.get("message_id"):
             doc = si_docs.for_message(conn, row["message_id"])
             if doc:
@@ -379,6 +428,11 @@ def _print_candidate(i: int, total: int, row: dict, conn=None) -> None:
         if row.get("detail"):
             print(f"  {row['detail']}")
         for line in drawings.describe(conn, row["id"]):
+            print(line)
+    if row["source_type"] == "issues" and conn is not None:
+        if row.get("detail"):
+            print(f"  {row['detail']}")
+        for line in forma_issues.describe(conn, row["id"]):
             print(line)
     if row.get("detail") and row["source_type"] in ("email", "rfi_link"):
         print(f"  {row['detail']}")

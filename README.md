@@ -25,6 +25,16 @@ your mailbox (read-only), the Notion API, and one LLM API.
   (Autodesk Forma, Procore) are not turned into one task each. They are parsed
   into one reviewable task per project, with the sheets as a checklist grouped by
   drawing set; later notices are appended while that task is open.
+- **Forma issue lists.** Forma issue notices (assigned, commented, watcher added) are not
+  turned into one task each either. Each project gets a single task whose body is a
+  checklist of its open issues, rewritten in place as comments arrive. When an RFI of
+  yours covers an issue (matched by subject matter against your RFIs and, optionally, a
+  colleague's RFI tracker) the issue is ticked with a note saying which RFI; a drafted RFI
+  only adds a note, and if the RFI is cancelled later the issue is un-ticked. Nothing is
+  deleted from Notion.
+- **Colleague tracker (read-only).** Optionally point `[colleague_page]` at a colleague's
+  Notion page holding a table of the RFIs they send. It is read through a client with no
+  write methods (`notion_readonly.py`), so the assistant cannot modify it.
 - **RFI tracking.** Internal RFI emails are registered as "your RFIs"; when the
   contractor's Procore notice for one arrives it is matched (by subject matter,
   not number) and the assistant raises a desktop notification plus one Notion task
@@ -46,6 +56,7 @@ your mailbox (read-only), the Notion API, and one LLM API.
   duplicates merged. The brief shows a general summary, the upcoming schedule
   entries (slab pours first) and anything naming your company. Never a task.
 - **Add to another task.** In the review queue, `t` folds an item into a related task (another queued item or one already in Notion) instead of rejecting it: the AI drafts a one-line note of what it adds, you confirm it, the note goes into that task's body and the higher priority and earlier due date carry over. The assistant suggests a target when it sees one, but never merges by itself.
+- **Replies to your RFIs by email.** If an answer reaches you as an ordinary email (forwarded, or direct) instead of a Procore notice, the assistant reads it - and its attached PDF - decides whether it answers one of your open RFIs, and treats it like a Procore reply. Your own RFI drafts are read the same way to get a real title and question, and review comments on one RFI are folded into a single task.
 - **Quick capture.** `Add Task` and `Add Note` launchers (Start Menu) to jot a
   task or a phone-call note in seconds. Notes are filed in the body of the
   relevant Notion task.
@@ -171,6 +182,8 @@ Do the same for `note.cmd` ("Add Note") and `review.cmd` ("Review Tasks").
 - Email is opened **read-only** at the protocol level; the code never moves,
   flags, sends, or deletes anything.
 - Nothing is ever deleted from Notion - only created, updated, or completed.
+- Any other Notion page shared with the integration (a colleague's tracker) is read
+  through a client that refuses every non-read request.
 - Anything the AI infers goes through the review queue before it is written.
 - No outbound message of any kind is sent automatically.
 - Secrets never touch a config file, a log, or version control.

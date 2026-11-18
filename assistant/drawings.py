@@ -126,7 +126,7 @@ def sheet_kind(sheet: str, discipline: str = "") -> str:
     """'A' / 'M' / 'S' for the disciplines that get a checkbox, else 'other'."""
     d = discipline.lower()
     # Procore's "discipline" is whatever folders the GC set up ("Access Panel",
-    # "PMP - Mechanical Shaft"), so a miss here falls back to the sheet number.
+    # "Sub - Mechanical Shaft"), so a miss here falls back to the sheet number.
     if "arch" in d:
         return "A"
     if "mech" in d or "hvac" in d:
@@ -363,13 +363,13 @@ def _annotate_related(conn, notion: N.Notion, items) -> None:
                 log.warning("could not annotate related task %s: %s", rel["notion_page_id"], exc)
 
 
-def auto_close(conn, notion: N.Notion, cache: dict | None = None) -> int:
-    """Mark a drawing-review task Done once every checkbox in its body is ticked."""
+def auto_close(conn, notion: N.Notion, cache: dict | None = None, source_type: str = "drawings") -> int:
+    """Mark a list task (drawings, or Forma issues) Done once every checkbox in its body is ticked."""
     cache = cache if cache is not None else {}
     closed = 0
     for cand in conn.execute(
-        "SELECT id, title, notion_page_id FROM task_candidates WHERE source_type='drawings' "
-        "AND status='pushed' AND notion_page_id IS NOT NULL").fetchall():
+        "SELECT id, title, notion_page_id FROM task_candidates WHERE source_type=? "
+        "AND status='pushed' AND notion_page_id IS NOT NULL", (source_type,)).fetchall():
         try:
             if not _page_open(notion, cand["notion_page_id"], cache):
                 continue

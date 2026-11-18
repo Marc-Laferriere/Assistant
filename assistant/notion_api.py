@@ -116,6 +116,10 @@ class Notion:
                 return
             cursor = result.get("next_cursor")
 
+    def update_block(self, block_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """Change a block's content in place, e.g. {"to_do": {"rich_text": [...], "checked": True}}."""
+        return self._request("PATCH", f"/v1/blocks/{block_id}", body)
+
     def append_blocks(self, page_id: str, blocks: list[dict[str, Any]]) -> dict[str, Any]:
         return self._request("PATCH", f"/v1/blocks/{page_id}/children", {"children": blocks})
 
